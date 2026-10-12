@@ -5,6 +5,7 @@
     catch { return {}; }
   };
   const api = (path, options = {}) => {
+    if (window.oloApi) return window.oloApi(path, options);
     const current = session();
     return fetch((current.server || API_FALLBACK) + path, {
       ...options,
@@ -66,7 +67,7 @@
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
       if (!subscription) return;
-      await fetch((current.server || API_FALLBACK) + '/api/v1/notifications/web-push', {
+      await api('/api/v1/notifications/web-push', {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${current.token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: subscription.endpoint })
