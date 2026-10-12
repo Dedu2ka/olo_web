@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#131541">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Olo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Olo</title>
+<style>
+:root{--bg:#131541;--card:#191B4E;--line:#2C3285;--me:#3B44B3;--them:#1E215C;--mut:#9aa0d8}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:#fff;font:16px/1.35 system-ui,-apple-system,"Segoe UI",sans-serif}
+#app{height:var(--app-height,100dvh);display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+input,textarea{width:100%;background:var(--card);border:1px solid var(--line);border-radius:12px;color:#fff;padding:12px;font:inherit}
+input:focus-visible,textarea:focus-visible,button:focus-visible{outline:2px solid #6B8AFF;outline-offset:2px}
+button{background:var(--line);color:#fff;border:0;border-radius:12px;padding:12px 16px;font:inherit;cursor:pointer}
+.auth{margin:auto;width:min(380px,90%);display:flex;flex-direction:column;gap:12px;text-align:center}
+.auth h1{margin:0 0 8px;font-size:28px;letter-spacing:.02em}
+.auth a{color:#3B82F6;cursor:pointer;font-size:14px}
+.err{color:#ff7a8a;font-size:14px}
+.col{display:flex;flex-direction:column;height:100%}
+header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--card)}
+.sp{flex:1}
+.pad{padding:12px 16px}
+.list{flex:1;overflow:auto;padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:28px;padding:10px 14px;cursor:pointer}
+.av{width:40px;height:40px;border-radius:50%;background:#bbb;object-fit:cover;display:flex;align-items:center;justify-content:center;flex:none}
+.t{flex:1;min-width:0;display:flex;flex-direction:column}
+.t b,.t span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t span{color:var(--mut);font-size:13px}
+em{background:#5B67F1;border-radius:11px;padding:1px 7px;font-size:11px;font-style:normal}
+.empty{color:var(--mut);text-align:center;padding:24px}
+.msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.m{max-width:80%;padding:10px 12px;border-radius:12px 12px 12px 2px;background:var(--them);white-space:pre-wrap;word-break:break-word;align-self:flex-start}
+.m.me{background:var(--me);border-radius:12px 12px 2px 12px;align-self:flex-end}
+.m small{display:block;text-align:right;font-size:10px;color:#bfc3ff}
+i{font-style:normal}.rd{color:#72b7ff}
+footer{display:flex;gap:8px;padding:10px 12px;align-items:flex-end}
+footer textarea{resize:none;max-height:120px}
+.back{padding:6px 14px;font-size:20px}
+.avatar-input{display:none}.profile-preview{display:flex;justify-content:center;margin:8px 0}.profile-preview .av{width:96px;height:96px;font-size:28px}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const $=s=>document.querySelector(s);
+const S={server:'',token:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0};
+let view='',wsGen=0;
+try{Object.assign(S,JSON.parse(localStorage.getItem('olo.session')||'{}'))}catch{}
+
+function h(t,p={},...c){const e=document.createElement(t);for(const k in p){if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);else e.setAttribute(k,p[k])}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e}
+function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView())}
+function saveSession(){localStorage.setItem('olo.session',JSON.stringify({server:S.server,token:S.token,userId:S.userId,username:S.username}))}
+function avatar(u){return /^data:image\//.test(u||'')?h('img',{class:'av',src:u,alt:''}):h('div',{class:'av'},'👤')}
+
+async function api(path,opt={}){
+  const r=await fetch(S.server+path,{...opt,headers:{'Content-Type':'application/json',...(S.token?{Authorization:'Bearer '+S.token}:{}),...opt.headers}});
+  if(r.status===401&&S.token&&!path.includes('/auth/')){logout(false);throw new Error('expired')}
+  return r;
+}
+
+/* ---------- вход ---------- */
+function authView(){
+  let reg=false;
+  const err=h('div',{class:'err'});
+  const srv=h('input',{placeholder:'Адрес сервера: https://...',value:S.server||'https://olo-chat.duckdns.org',autocapitalize:'off',autocorrect:'off'});
+  const u=h('input',{placeholder:'Логин',autocapitalize:'off',autocomplete:'username'});
+  const p=h('input',{type:'password',placeholder:'Пароль',autocomplete:'current-password'});
+  const go=h('button',{},'Войти');
+  const sw=h('a',{},'Нет аккаунта? Регистрация');
+  sw.onclick=()=>{reg=!reg;go.textContent=reg?'Зарегистрироваться':'Войти';sw.textContent=reg?'Есть аккаунт? Вход':'Нет аккаунта? Регистрация'};
+  go.onclick=async()=>{
+    err.textContent='';
+    const s=srv.value.trim().replace(/\/+$/,'');
+    if(!/^https:\/\/|^http:\/\/localhost/.test(s)){err.textContent='Укажите адрес сервера вида https://...';return}
+    S.server=s;
+    try{
+      const r=await api('/api/v1/auth/'+(reg?'register':'login'),{method:'POST',body:JSON.stringify({username:u.value.trim(),password:p.value})});
+      if(!r.ok){
+        const j=await r.json().catch(()=>({}));
+        err.textContent=r.status===409?'Этот логин уже занят':r.status===401?'Неверный логин или пароль':r.status===429?'Слишком много попыток, попробуйте позже':j.message||'Ошибка '+r.status;
+        return;
+      }
+      const d=await r.json();
+      Object.assign(S,{token:d.token,userId:d.userId,username:d.username});
+      saveSession();start();
+    }catch{err.textContent='Нет связи с сервером'}
+  };
+  return h('div',{class:'auth'},h('h1',{},'olo'),err,srv,u,p,go,sw);
+}
+function start(){S.msgs=[];S.chatId=null;S.peerId=null;S.pendingChatId=new URLSearchParams(location.search).get('chat');connectWS();loadChats();show('list')}
+async function logout(remote=true){
+  if(remote&&S.token){const oldSession={server:S.server,token:S.token};if(window.oloDisablePush)await window.oloDisablePush(oldSession);await api('/api/v1/auth/logout',{method:'POST'}).catch(()=>{});}
+  wsGen++;if(S.ws)S.ws.close();S.ws=null;
+  Object.assign(S,{token:null,userId:null,chats:[],msgs:[],chatId:null});
+  localStorage.removeItem('olo.session');show('auth');
+}
+
+/* ---------- список чатов и поиск ---------- */
+function chatRow(c){return h('div',{class:'row',onclick:()=>openChat(c)},avatar(c.partnerAvatarUrl),h('div',{class:'t'},h('b',{},c.partnerName||'Чат'),h('span',{},c.lastMessage||'Нет сообщений')),c.unreadCount>0?h('em',{},c.unreadCount>99?'99+':String(c.unreadCount)):null)}
+function userRow(u){return h('div',{class:'row',onclick:()=>openWithUser(u)},avatar(u.avatarUrl),h('div',{class:'t'},h('b',{},u.displayName||u.username),u.displayName?h('span',{},'@'+u.username):null))}
+function renderChats(){
+  const l=$('#list');if(!l||S.q)return;
+  l.replaceChildren(...(S.chats.length?S.chats.map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по логину в поиске.')]));
+}
+async function loadChats(){
+  try{const r=await api('/api/v1/chats?userId='+S.userId);if(r.ok){S.chats=await r.json();if(view==='list')renderChats();if(S.pendingChatId){const c=S.chats.find(x=>x.id===S.pendingChatId);if(c){S.pendingChatId=null;history.replaceState({},'',location.pathname);openChat(c)}}}}catch{}
+}
+function listView(){
+  S.q='';
+  const out=h('div',{class:'list',id:'list'});
+  const q=h('input',{placeholder:'Поиск пользователей',autocapitalize:'off'});
+  let tm;
+  q.oninput=()=>{
+    S.q=q.value.trim();clearTimeout(tm);
+    tm=setTimeout(async()=>{
+      if(!S.q){renderChats();return}
+      const r=await api('/api/v1/users/search?query='+encodeURIComponent(S.q));
+      if(r.ok&&S.q){const us=(await r.json()).filter(x=>x.id!==S.userId);out.replaceChildren(...(us.length?us.map(userRow):[h('div',{class:'empty'},'Никого не нашли')]))}
+    },300);
+  };
+  setTimeout(renderChats);
+  return h('div',{class:'col'},
+    h('header',{},h('b',{},'olo'),h('span',{class:'sp'}),h('button',{onclick:()=>show('profile')},'Профиль'),h('button',{onclick:()=>confirm('Выйти из аккаунта?')&&logout()},'Выйти')),
+    h('div',{class:'pad'},q),out);
+}
+function profileView(){
+  const name=h('input',{placeholder:'Имя (необязательно)',maxlength:'100'}),preview=h('div',{class:'profile-preview'},avatar(S.avatar));
+  const err=h('div',{class:'err'}),file=h('input',{type:'file',accept:'image/jpeg,image/png,image/webp',class:'avatar-input'});let avatarUrl=S.avatar||null;
+  const save=h('button',{},'Сохранить');
+  file.onchange=async()=>{const f=file.files?.[0];if(!f)return;if(!f.type.startsWith('image/')){err.textContent='Выберите изображение';return}try{avatarUrl=await compressAvatar(f);preview.replaceChildren(avatar(avatarUrl));err.textContent=''}catch{err.textContent='Не удалось обработать фото'}};
+  const choose=h('button',{onclick:()=>file.click()},'Выбрать фото');
+  const clear=h('button',{onclick:()=>{avatarUrl=null;preview.replaceChildren(avatar(null));file.value=''}},'Убрать фото');
+  save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();show('list')}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
+  setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}}catch{}},0);
+  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>show('list')},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
+}
+function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
+function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,msgs:[]});show('chat');loadMsgs()}
+async function openWithUser(u){
+  const r=await api('/api/v1/chats/direct/'+u.id);
+  if(r.status===404){Object.assign(S,{chatId:null,peerId:u.id,partner:u.displayName||u.username,avatar:u.avatarUrl,msgs:[]});show('chat')}
+  else if(r.ok)openChat(await r.json());
+}
+
+/* ---------- диалог ---------- */
+const TICK={PENDING:'…',SENT:'✓',DELIVERED:'✓✓',READ:'✓✓',FAILED:'⚠ не отправлено'};
+function msgEl(m){
+  const me=m.senderId===S.userId,d=new Date(m.timestamp);
+  return h('div',{class:'m'+(me?' me':'')},m.content,
+    h('small',{},isNaN(d)?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),me?h('i',{class:m.status==='READ'?'rd':''},' '+(TICK[m.status]||'')):null));
+}
+function renderMsgs(){
+  const l=$('#msgs');if(!l)return;
+  const near=l.scrollHeight-l.scrollTop-l.clientHeight<80;
+  S.msgs.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+  l.replaceChildren(...S.msgs.map(msgEl));
+  if(near)l.scrollTop=l.scrollHeight;
+}
+function markRead(){
+  if(view!=='chat'||document.hidden||!S.chatId||!S.msgs.some(m=>m.senderId!==S.userId&&m.status!=='READ'))return;
+  S.msgs.forEach(m=>{if(m.senderId!==S.userId)m.status='READ'});
+  api(`/api/v1/chats/${S.chatId}/read`,{method:'POST'}).then(loadChats).catch(()=>{});
+}
+async function loadMsgs(){
+  if(!S.chatId)return;
+  try{
+    const r=await api(`/api/v1/chats/${S.chatId}/messages`);if(!r.ok)return;
+    const list=await r.json();
+    const pend=S.msgs.filter(m=>m.status==='PENDING'||m.status==='FAILED');
+    S.msgs=[...list,...pend.filter(p=>!list.some(m=>m.clientMessageId===p.clientMessageId))];
+    renderMsgs();markRead();
+  }catch{}
+}
+async function send(text){
+  const cid=crypto.randomUUID(),now=new Date().toISOString();
+  S.msgs.push({id:cid,clientMessageId:cid,chatId:S.chatId,senderId:S.userId,content:text,status:'PENDING',timestamp:now});
+  renderMsgs();
+  const body=S.chatId?{senderId:S.userId,content:text,sentAt:now,clientMessageId:cid}:{targetUserId:S.peerId,content:text,sentAt:now,clientMessageId:cid};
+  try{
+    const r=await api(S.chatId?`/api/v1/chats/${S.chatId}/messages`:'/api/v1/chats/direct/messages',{method:'POST',body:JSON.stringify(body)});
+    if(!r.ok)throw 0;
+    const d=await r.json();
+    S.chatId=d.chatId;S.peerId=null;
+    S.msgs=S.msgs.filter(x=>x.id!==d.id&&x.clientMessageId!==cid);S.msgs.push(d);
+  }catch{const m=S.msgs.find(x=>x.clientMessageId===cid);if(m)m.status='FAILED'}
+  renderMsgs();loadChats();
+}
+function chatView(){
+  const inp=h('textarea',{rows:'1',placeholder:'Сообщение'});
+  const go=()=>{const t=inp.value.trim();if(t){inp.value='';send(t)}};
+  inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
+  setTimeout(renderMsgs);
+  return h('div',{class:'col'},
+    h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>{S.chatId=null;S.peerId=null;show('list');loadChats()}},'‹'),avatar(S.avatar),h('b',{},S.partner)),
+    h('div',{class:'msgs',id:'msgs'}),
+    h('footer',{},inp,h('button',{'aria-label':'Отправить',onclick:go},'Отправить')));
+}
+
+/* ---------- WebSocket ---------- */
+function closeWS(){wsGen++;if(S.ws)S.ws.close();S.ws=null}
+async function connectWS(){
+  closeWS();if(!S.token)return;
+  const id=wsGen;
+  try{
+    const r=await api('/api/v1/ws-ticket',{method:'POST'});if(!r.ok)throw 0;
+    const {ticket}=await r.json();if(id!==wsGen)return;
+    const ws=new WebSocket(S.server.replace(/^http/,'ws')+'/ws?ticket='+encodeURIComponent(ticket));S.ws=ws;
+    ws.onopen=()=>{S.retry=0;loadChats();loadMsgs()};
+    ws.onmessage=e=>{try{onEvent(JSON.parse(e.data))}catch{}};
+    ws.onclose=()=>{if(id===wsGen)retry()};
+  }catch{if(id===wsGen)retry()}
+}
+function retry(){setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
+function onEvent(e){
+  if(e.type==='NEW_MESSAGE'){
+    if(!S.chatId&&S.peerId&&e.senderId===S.peerId){S.chatId=e.chatId;S.peerId=null}
+    if(e.chatId===S.chatId&&view==='chat'&&!S.msgs.some(m=>m.id===e.id||(e.clientMessageId&&m.clientMessageId===e.clientMessageId))){
+      S.msgs.push(e);renderMsgs();markRead();
+    }
+    loadChats();
+  }else if(e.type==='MESSAGE_STATUS'&&e.chatId===S.chatId){
+    const m=S.msgs.find(x=>x.id===e.id);if(m){m.status=e.status;renderMsgs()}
+  }
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden||!S.token)return;
+  if(!S.ws||S.ws.readyState>1)connectWS();else{loadChats();loadMsgs()}
+});
+
+function updateViewportHeight(){if(window.visualViewport)document.documentElement.style.setProperty('--app-height',window.visualViewport.height+'px')}
+updateViewportHeight();window.visualViewport?.addEventListener('resize',updateViewportHeight);window.addEventListener('orientationchange',()=>setTimeout(updateViewportHeight,150));
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+window.addEventListener('olo-open-chat',event=>{const id=event.detail.chatId,c=S.chats.find(x=>x.id===id);if(c)openChat(c);else{S.pendingChatId=id;loadChats()}});
+if(S.token)start();else show('auth');
+</script>
+<script src="push.js" defer></script>
+</body>
+</html>
