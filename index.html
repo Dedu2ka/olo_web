@@ -109,7 +109,12 @@ function renderChats(){
   l.replaceChildren(...(S.chats.length?S.chats.map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по логину в поиске.')]));
 }
 async function loadChats(){
-  try{const r=await api('/api/v1/chats?userId='+S.userId);if(r.ok){S.chats=await r.json();if(view==='list')renderChats();if(S.pendingChatId){const c=S.chats.find(x=>x.id===S.pendingChatId);if(c){S.pendingChatId=null;history.replaceState({},'',location.pathname);openChat(c)}}}}catch{}
+  try{
+    const r=await api('/api/v1/chats?userId='+encodeURIComponent(S.userId));
+    if(!r.ok){if(view==='list')$('#list')?.replaceChildren(h('div',{class:'empty'},'Не удалось загрузить чаты (HTTP '+r.status+')'));return}
+    S.chats=await r.json();if(view==='list')renderChats();
+    if(S.pendingChatId){const c=S.chats.find(x=>x.id===S.pendingChatId);if(c){S.pendingChatId=null;history.replaceState({},'',location.pathname);openChat(c)}}
+  }catch{if(view==='list')$('#list')?.replaceChildren(h('div',{class:'empty'},'Не удалось связаться с сервером при загрузке чатов'))}
 }
 function listView(){
   S.q='';
@@ -120,8 +125,11 @@ function listView(){
     S.q=q.value.trim();clearTimeout(tm);
     tm=setTimeout(async()=>{
       if(!S.q){renderChats();return}
-      const r=await api('/api/v1/users/search?query='+encodeURIComponent(S.q));
-      if(r.ok&&S.q){const us=(await r.json()).filter(x=>x.id!==S.userId);out.replaceChildren(...(us.length?us.map(userRow):[h('div',{class:'empty'},'Никого не нашли')]))}
+      try{
+        const r=await api('/api/v1/users/search?query='+encodeURIComponent(S.q));
+        if(!r.ok){out.replaceChildren(h('div',{class:'empty'},'Не удалось выполнить поиск (HTTP '+r.status+')'));return}
+        if(S.q){const us=(await r.json()).filter(x=>x.id!==S.userId);out.replaceChildren(...(us.length?us.map(userRow):[h('div',{class:'empty'},'Никого не нашли')]));}
+      }catch{out.replaceChildren(h('div',{class:'empty'},'Не удалось связаться с сервером при поиске'))}
     },300);
   };
   setTimeout(renderChats);
@@ -137,7 +145,7 @@ function profileView(){
   const choose=h('button',{onclick:()=>file.click()},'Выбрать фото');
   const clear=h('button',{onclick:()=>{avatarUrl=null;preview.replaceChildren(avatar(null));file.value=''}},'Убрать фото');
   save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();show('list')}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
-  setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}}catch{}},0);
+  setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}else{err.textContent='Не удалось загрузить профиль (HTTP '+r.status+')'}}catch{err.textContent='Не удалось связаться с сервером при загрузке профиля'}},0);
   return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>show('list')},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
 }
 function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
@@ -242,4 +250,5 @@ if(S.token)start();else show('auth');
 <script src="push.js" defer></script>
 </body>
 </html>
+
 
