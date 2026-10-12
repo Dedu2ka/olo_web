@@ -50,13 +50,16 @@ footer textarea{resize:none;max-height:120px}
 <div id="app"></div>
 <script>
 const $=s=>document.querySelector(s);
-const S={server:'',token:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0};
+const API_SERVER='https://olo-chat.duckdns.org';
+const S={server:API_SERVER,token:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0};
 let view='',wsGen=0;
 try{Object.assign(S,JSON.parse(localStorage.getItem('olo.session')||'{}'))}catch{}
+S.server=API_SERVER;
 
 function h(t,p={},...c){const e=document.createElement(t);for(const k in p){if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);else e.setAttribute(k,p[k])}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e}
 function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView())}
 function saveSession(){localStorage.setItem('olo.session',JSON.stringify({server:S.server,token:S.token,userId:S.userId,username:S.username}))}
+if(S.token)saveSession();
 function avatar(u){return /^data:image\//.test(u||'')?h('img',{class:'av',src:u,alt:''}):h('div',{class:'av'},'👤')}
 
 async function api(path,opt={}){
@@ -69,7 +72,6 @@ async function api(path,opt={}){
 function authView(){
   let reg=false;
   const err=h('div',{class:'err'});
-  const srv=h('input',{placeholder:'Адрес сервера: https://...',value:S.server||'https://olo-chat.duckdns.org',autocapitalize:'off',autocorrect:'off'});
   const u=h('input',{placeholder:'Логин',autocapitalize:'off',autocomplete:'username'});
   const p=h('input',{type:'password',placeholder:'Пароль',autocomplete:'current-password'});
   const go=h('button',{},'Войти');
@@ -77,9 +79,6 @@ function authView(){
   sw.onclick=()=>{reg=!reg;go.textContent=reg?'Зарегистрироваться':'Войти';sw.textContent=reg?'Есть аккаунт? Вход':'Нет аккаунта? Регистрация'};
   go.onclick=async()=>{
     err.textContent='';
-    const s=srv.value.trim().replace(/\/+$/,'');
-    if(!/^https:\/\/|^http:\/\/localhost/.test(s)){err.textContent='Укажите адрес сервера вида https://...';return}
-    S.server=s;
     try{
       const r=await api('/api/v1/auth/'+(reg?'register':'login'),{method:'POST',body:JSON.stringify({username:u.value.trim(),password:p.value})});
       if(!r.ok){
@@ -92,7 +91,7 @@ function authView(){
       saveSession();start();
     }catch{err.textContent='Нет связи с сервером'}
   };
-  return h('div',{class:'auth'},h('h1',{},'olo'),err,srv,u,p,go,sw);
+  return h('div',{class:'auth'},h('h1',{},'olo'),err,u,p,go,sw);
 }
 function start(){S.msgs=[];S.chatId=null;S.peerId=null;S.pendingChatId=new URLSearchParams(location.search).get('chat');connectWS();loadChats();show('list')}
 async function logout(remote=true){
@@ -243,3 +242,4 @@ if(S.token)start();else show('auth');
 <script src="push.js" defer></script>
 </body>
 </html>
+

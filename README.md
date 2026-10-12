@@ -1,19 +1,26 @@
 # Olo Web
 
-Static iPhone-friendly web client/PWA for the Olo messenger.
+Веб-версия мессенджера Olo, адаптированная для iPhone и установки как PWA.
 
-## GitHub Pages
+## Публикация через GitHub Pages
 
-Create a GitHub repository for this folder, push the default branch as `main`, then choose **Settings → Pages → GitHub Actions**. The workflow in `.github/workflows/pages.yml` publishes the static files on every push to `main`.
+1. Добавьте эту папку в GitHub Desktop как локальный репозиторий.
+2. Нажмите **Publish repository** и опубликуйте репозиторий на GitHub.
+3. В репозитории откройте **Settings → Pages** и выберите источник **GitHub Actions**.
+4. Откройте вкладку **Actions** и дождитесь успешного завершения workflow `pages.yml`. Новые изменения будут публиковаться при каждом push в ветку `main`.
+5. После успешной публикации откройте сайт по адресу `https://<имя-владельца>.github.io/<имя-репозитория>/`.
 
-The app uses relative asset URLs and works from the repository Pages path. It calls the backend at `https://olo-chat.duckdns.org` unless another server URL is entered on the sign-in screen.
+Если workflow сообщает, что Pages не найден, проверьте, что в **Settings → Pages** выбран источник **GitHub Actions**, затем повторно запустите workflow через **Actions → Re-run jobs → Re-run all jobs**.
 
-## iPhone installation and notifications
+Веб-клиент автоматически подключается к серверу `https://olo-chat.duckdns.org`; вводить адрес сервера при входе или регистрации не нужно.
 
-Open the HTTPS Pages URL in Safari, choose **Share → Add to Home Screen**, launch Olo from its Home Screen icon, sign in, and tap the bell to enable notifications. Web Push on iPhone requires iOS/iPadOS 16.4 or later and a Home Screen web app. The user must grant notification permission.
+## Установка на iPhone и уведомления
 
-The backend must be deployed with a stable VAPID key pair set as `WEB_PUSH_PUBLIC_KEY` and `WEB_PUSH_PRIVATE_KEY`, plus `CORS_ALLOWED_ORIGINS` set to the exact Pages origin (for example `https://OWNER.github.io`). Never commit the private VAPID key. Set `WEB_PUSH_SUBJECT` to a working `mailto:` contact or HTTPS contact URL.
+Откройте опубликованный HTTPS-адрес в Safari, нажмите **Поделиться → На экран «Домой»**, затем запустите Olo с появившегося значка. Войдите в аккаунт и нажмите кнопку уведомлений, чтобы включить push-уведомления. На iPhone и iPad для Web Push требуется iOS/iPadOS 16.4 или новее, приложение должно быть добавлено на экран «Домой», а пользователь должен разрешить уведомления.
 
-## Limitations
+Для push-уведомлений на сервере должны быть настроены постоянные VAPID-ключи: `WEB_PUSH_PUBLIC_KEY` и `WEB_PUSH_PRIVATE_KEY`. Также в `CORS_ALLOWED_ORIGINS` укажите точный origin опубликованного сайта, например `https://<имя-владельца>.github.io` (без пути репозитория и завершающего `/`). В `WEB_PUSH_SUBJECT` укажите рабочий контакт в формате `mailto:` или HTTPS URL. Приватный VAPID-ключ нельзя добавлять в этот репозиторий.
 
-GitHub Pages hosts only this static client. The backend, database, Redis, and WebSocket endpoint remain on the server. Push delivery also depends on iOS notification settings, network availability, and the browser push service.
+## Что размещается на GitHub Pages
+
+GitHub Pages публикует только статическую веб-версию. Бэкенд, база данных, Redis и WebSocket должны продолжать работать на сервере. Доставка уведомлений также зависит от настроек iOS, подключения к интернету и доступности push-службы браузера.
+
