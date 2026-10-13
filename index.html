@@ -29,6 +29,8 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var
 .pad{padding:12px 16px}
 .list{flex:1;overflow:auto;padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
 .row{display:flex;align-items:center;gap:12px;background:var(--card);border-radius:28px;padding:10px 14px;cursor:pointer}
+.chat-meta{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:none}.chat-time{color:var(--mut);font-size:11px}
+.connection-status{padding:8px 12px;margin:0 16px;background:#25284e;border-radius:10px;color:#c4c9ff;font-size:13px}.connection-status.connected{color:#8be0b2;background:#17382f}.connection-status.reconnecting{color:#ffd27a;background:#3b3020}.connection-status.error{color:#ff9ca3;background:#402329}
 .av{width:40px;height:40px;border-radius:50%;background:#bbb;object-fit:cover;display:flex;align-items:center;justify-content:center;flex:none}
 .t{flex:1;min-width:0;display:flex;flex-direction:column}
 .t b,.t span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -51,13 +53,13 @@ footer textarea{resize:none;max-height:120px}
 <script>
 const $=s=>document.querySelector(s);
 const API_SERVER='https://olo-chat.duckdns.org';
-const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false};
+const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false,connectionStatus:'DISCONNECTED'};
 let view='',wsGen=0;
 try{Object.assign(S,JSON.parse(localStorage.getItem('olo.session')||'{}'))}catch{}
 S.server=API_SERVER;
 
 function h(t,p={},...c){const e=document.createElement(t);for(const k in p){if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);else e.setAttribute(k,p[k])}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e}
-function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView())}
+function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView());updateConnectionStatus()}
 function saveSession(){localStorage.setItem('olo.session',JSON.stringify({server:S.server,token:S.token,refreshToken:S.refreshToken,userId:S.userId,username:S.username}))}
 if(S.token)saveSession();
 function avatar(u){return /^data:image\//.test(u||'')?h('img',{class:'av',src:u,alt:''}):h('div',{class:'av'},'👤')}
@@ -120,7 +122,13 @@ async function logout(remote=true){
 }
 
 /* ---------- список чатов и поиск ---------- */
-function chatRow(c){return h('div',{class:'row',onclick:()=>openChat(c)},avatar(c.partnerAvatarUrl),h('div',{class:'t'},h('b',{},c.partnerName||'Чат'),h('span',{},c.lastMessage||'Нет сообщений')),c.unreadCount>0?h('em',{},c.unreadCount>99?'99+':String(c.unreadCount)):null)}
+function formatChatTime(value){if(!value)return'';const date=new Date(value);return Number.isNaN(date.getTime())?'':new Intl.DateTimeFormat([], {hour:'2-digit',minute:'2-digit'}).format(date)}
+function chatRow(c){
+  const content=c.lastMessage||'Нет сообщений';
+  const sender=c.lastMessageSenderId===S.userId?'Вы':c.lastMessageSenderId?(c.partnerName||'Собеседник'):'';
+  const preview=sender?`${sender}: ${content}`:content;
+  return h('div',{class:'row',onclick:()=>openChat(c)},avatar(c.partnerAvatarUrl),h('div',{class:'t'},h('b',{},c.partnerName||'Чат'),h('span',{},preview)),h('div',{class:'chat-meta'},c.lastMessageAt?h('span',{class:'chat-time'},formatChatTime(c.lastMessageAt)):null,c.unreadCount>0?h('em',{},c.unreadCount>99?'99+':String(c.unreadCount)):null))
+}
 function userRow(u){return h('div',{class:'row',onclick:()=>openWithUser(u)},avatar(u.avatarUrl),h('div',{class:'t'},h('b',{},u.displayName||u.username),u.displayName?h('span',{},'@'+u.username):null))}
 function renderChats(){
   const l=$('#list');if(!l||S.q)return;
@@ -153,7 +161,7 @@ function listView(){
   setTimeout(renderChats);
   return h('div',{class:'col'},
     h('header',{},h('b',{},'olo'),h('span',{class:'sp'}),h('button',{onclick:()=>show('profile')},'Профиль'),h('button',{onclick:()=>confirm('Выйти из аккаунта?')&&logout()},'Выйти')),
-    h('div',{class:'pad'},q),out);
+    h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'pad'},q),out);
 }
 function profileView(){
   const name=h('input',{placeholder:'Имя (необязательно)',maxlength:'100'}),preview=h('div',{class:'profile-preview'},avatar(S.avatar));
@@ -164,7 +172,7 @@ function profileView(){
   const clear=h('button',{onclick:()=>{avatarUrl=null;preview.replaceChildren(avatar(null));file.value=''}},'Убрать фото');
   save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();show('list')}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
   setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}else{err.textContent='Не удалось загрузить профиль (HTTP '+r.status+')'}}catch{err.textContent='Не удалось связаться с сервером при загрузке профиля'}},0);
-  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>show('list')},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
+  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>show('list')},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
 }
 function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
 function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,msgs:[],hasOlder:false,loadingOlder:false});show('chat');loadMsgs()}
@@ -231,6 +239,7 @@ function chatView(){
   setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list)list.onscroll=()=>{if(list.scrollTop<100)loadOlderMessages()};},0);
   return h('div',{class:'col'},
     h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>{S.chatId=null;S.peerId=null;show('list');loadChats()}},'‹'),avatar(S.avatar),h('b',{},S.partner)),
+    h('div',{id:'connection-status',class:'connection-status'}),
     h('div',{class:'msgs',id:'msgs'}),
     h('footer',{},inp,h('button',{'aria-label':'Отправить',onclick:go},'Отправить')));
 }
@@ -239,17 +248,24 @@ function chatView(){
 function closeWS(){wsGen++;if(S.ws)S.ws.close();S.ws=null}
 async function connectWS(){
   closeWS();if(!S.token)return;
+  S.connectionStatus=S.retry?'RECONNECTING':'CONNECTING';updateConnectionStatus();
   const id=wsGen;
   try{
     const r=await api('/api/v1/ws-ticket',{method:'POST'});if(!r.ok)throw 0;
     const {ticket}=await r.json();if(id!==wsGen)return;
     const ws=new WebSocket(S.server.replace(/^http/,'ws')+'/ws?ticket='+encodeURIComponent(ticket));S.ws=ws;
-    ws.onopen=()=>{S.retry=0;loadChats();loadMsgs()};
+    ws.onopen=()=>{S.retry=0;S.connectionStatus='CONNECTED';updateConnectionStatus();loadChats();loadMsgs()};
     ws.onmessage=e=>{try{onEvent(JSON.parse(e.data))}catch{}};
-    ws.onclose=()=>{if(id===wsGen)retry()};
-  }catch{if(id===wsGen)retry()}
+    ws.onerror=()=>{if(id===wsGen){S.connectionStatus='ERROR';updateConnectionStatus()}};
+    ws.onclose=()=>{if(id===wsGen){S.connectionStatus='RECONNECTING';updateConnectionStatus();retry()}};
+  }catch{if(id===wsGen){S.connectionStatus='ERROR';updateConnectionStatus();retry()}}
 }
-function retry(){setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
+function retry(){S.connectionStatus='RECONNECTING';updateConnectionStatus();setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
+function updateConnectionStatus(){
+  const el=$('#connection-status');if(!el)return;
+  const states={CONNECTING:['Подключаемся к серверу…','reconnecting'],CONNECTED:['Подключено','connected'],RECONNECTING:['Связь прервалась, переподключаемся…','reconnecting'],ERROR:['Ошибка соединения','error'],DISCONNECTED:['Нет соединения','error']};
+  const [label,style]=states[S.connectionStatus]||states.DISCONNECTED;el.textContent='●  '+label;el.className='connection-status '+style;
+}
 function onEvent(e){
   if(e.type==='NEW_MESSAGE'){
     if(!S.chatId&&S.peerId&&e.senderId===S.peerId){S.chatId=e.chatId;S.peerId=null}
@@ -265,6 +281,8 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden||!S.token)return;
   if(!S.ws||S.ws.readyState>1)connectWS();else{loadChats();loadMsgs()}
 });
+window.addEventListener('offline',()=>{S.connectionStatus='ERROR';updateConnectionStatus()});
+window.addEventListener('online',()=>{if(S.token)connectWS()});
 
 function updateViewportHeight(){if(window.visualViewport)document.documentElement.style.setProperty('--app-height',window.visualViewport.height+'px')}
 updateViewportHeight();window.visualViewport?.addEventListener('resize',updateViewportHeight);window.addEventListener('orientationchange',()=>setTimeout(updateViewportHeight,150));

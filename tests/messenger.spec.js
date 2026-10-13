@@ -73,3 +73,24 @@ test('истёкший access token обновляется без повторн
   expect(refreshCalls).toBe(1);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('olo.session')).refreshToken)).toBe('refresh-2');
 });
+
+test('список чатов показывает автора, время последнего сообщения и статус соединения', async ({ page }) => {
+  const sentAt = '2026-10-12T12:34:00.000Z';
+  await page.route('https://olo-chat.duckdns.org/api/v1/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/auth/login')) return route.fulfill({ json: { token: 'access-1', refreshToken: 'refresh-1', userId: 'user-1', username: 'alice' } });
+    if (pathname.endsWith('/ws-ticket')) return route.fulfill({ status: 503, json: {} });
+    if (pathname.endsWith('/chats')) return route.fulfill({ json: [{
+      id: 'chat-1', type: 'DIRECT', partnerName: 'Bob', partnerAvatarUrl: null,
+      lastMessage: 'Привет', lastMessageAt: sentAt, lastMessageSenderId: 'user-1', unreadCount: 1
+    }] });
+    return route.fulfill({ status: 200, json: {} });
+  });
+  await page.goto('/');
+  await page.getByPlaceholder('Логин').fill('alice');
+  await page.getByPlaceholder('Пароль').fill('StrongPass1!');
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await expect(page.getByText('Вы: Привет')).toBeVisible();
+  await expect(page.locator('.chat-time')).toHaveText(/\d{2}:\d{2}(?:\s?[AP]M)?/);
+  await expect(page.locator('#connection-status')).toContainText(/переподключаемся/i);
+});
