@@ -48,6 +48,23 @@ footer{display:flex;gap:8px;padding:10px 12px;align-items:flex-end}
 footer textarea{resize:none;max-height:120px}
 .back{padding:6px 14px;font-size:20px}
 .avatar-input{display:none}.profile-preview{display:flex;justify-content:center;margin:8px 0}.profile-preview .av{width:96px;height:96px;font-size:28px}
+.app-header{min-height:56px;background:var(--bg);padding:12px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+.chat-header{display:flex;flex-direction:column;align-items:stretch;gap:10px;background:var(--card);padding:12px 16px}
+.chat-header-person{display:flex;align-items:center;gap:12px;min-height:40px}
+.chat-header-person b{font-weight:600}
+.bottom-bar{height:60px;min-height:60px;display:flex;align-items:center;justify-content:space-around;background:#0F1033;margin:0 calc(-1 * env(safe-area-inset-right)) calc(-1 * env(safe-area-inset-bottom)) calc(-1 * env(safe-area-inset-left));padding:0 8px env(safe-area-inset-bottom)}
+.bottom-bar button{width:50%;height:60px;border-radius:0;background:transparent;color:#3B82F6;font-size:25px;display:flex;align-items:center;justify-content:center}
+.bottom-bar button:active{background:rgba(59,130,246,.12)}
+.nav-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.settings-content{flex:1;min-height:0;overflow:auto;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.settings-content .profile-preview{margin:4px 0}
+.settings-content .settings-username{color:var(--mut);margin:0 0 4px}
+.settings-content>input:not(.avatar-input){max-width:520px}
+.settings-content>button{width:min(100%,520px)}
+.settings-content .settings-actions{width:min(100%,520px);display:flex;flex-direction:column;gap:10px}
+.settings-content .settings-actions button{width:100%}
+.settings-content .logout-button{background:#8B2C3B}
+.keyboard-open .bottom-bar{display:none}
 </style>
 </head>
 <body>
@@ -63,7 +80,7 @@ S.server=API_SERVER;
 function h(t,p={},...c){const e=document.createElement(t);for(const k in p){if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);else e.setAttribute(k,p[k])}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e}
 function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView());updateConnectionStatus()}
 function navigate(v){history.pushState({oloView:v},'',location.href);show(v)}
-window.addEventListener('popstate',()=>{if(view==='chat'){S.chatId=null;S.peerId=null;S.msgs=[];show('list');loadChats();return}if(view==='profile'){show('list');return}if(view==='list'&&S.token){history.pushState({oloView:'list'},'',location.href);return}if(view==='auth')return;show('auth')});
+window.addEventListener('popstate',event=>{if(!S.token){show('auth');history.replaceState({oloView:'auth'},'',location.href);return}const target=event.state?.oloView;if(target==='chat'){show('chat');loadMsgs();return}if(target==='profile'){show('profile');return}if(view==='chat'){S.chatId=null;S.peerId=null;S.msgs=[]}if(view==='list'&&S.token){history.pushState({oloView:'list'},'',location.href);return}show('list');loadChats()});
 function saveSession(){localStorage.setItem('olo.session',JSON.stringify({server:S.server,token:S.token,refreshToken:S.refreshToken,userId:S.userId,username:S.username}))}
 if(S.token)saveSession();
 function avatar(u){return /^data:image\//.test(u||'')?h('img',{class:'av',src:u,alt:''}):h('div',{class:'av'},'👤')}
@@ -148,6 +165,11 @@ async function loadChats(){
     if(S.pendingChatId){const c=S.chats.find(x=>x.id===S.pendingChatId);if(c){S.pendingChatId=null;history.replaceState({},'',location.pathname);openChat(c)}}
   }catch{if(view==='list')$('#list')?.replaceChildren(h('div',{class:'empty'},'Не удалось связаться с сервером при загрузке чатов'))}
 }
+function bottomBar(active){
+  const settings=h('button',{type:'button','aria-label':'Настройки',title:'Настройки',onclick:()=>{if(active!=='settings')navigate('profile')}},h('span',{class:'nav-icon','aria-hidden':'true'},'⚙'),h('span',{class:'nav-label'},'Настройки'));
+  const search=h('button',{type:'button','aria-label':'Поиск и чаты',title:'Поиск и чаты',onclick:()=>{if(active==='list')return;if(view==='chat'){S.chatId=null;S.peerId=null;S.msgs=[]}navigate('list');loadChats()}},h('span',{class:'nav-icon','aria-hidden':'true'},'✎'),h('span',{class:'nav-label'},'Поиск и чаты'));
+  return h('nav',{class:'bottom-bar','aria-label':'Основная навигация'},settings,search)
+}
 function listView(){
   S.q='';
   const out=h('div',{class:'list',id:'list'});
@@ -166,19 +188,20 @@ function listView(){
   };
   setTimeout(renderChats);
   return h('div',{class:'col'},
-    h('header',{},h('b',{},'olo'),h('span',{class:'sp'}),h('button',{onclick:()=>navigate('profile')},'Профиль'),h('button',{onclick:()=>confirm('Выйти из аккаунта?')&&logout()},'Выйти')),
-    h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'pad'},q),out);
+    h('header',{class:'app-header'},h('b',{},'olo')),
+    h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'pad'},q),out,bottomBar('list'));
 }
 function profileView(){
-  const name=h('input',{placeholder:'Имя (необязательно)',maxlength:'100'}),preview=h('div',{class:'profile-preview'},avatar(S.avatar));
+  const name=h('input',{placeholder:'Отображаемое имя',maxlength:'100'}),preview=h('div',{class:'profile-preview'},avatar(S.avatar));
   const err=h('div',{class:'err'}),file=h('input',{type:'file',accept:'image/jpeg,image/png,image/webp',class:'avatar-input'});let avatarUrl=S.avatar||null;
-  const save=h('button',{},'Сохранить');
+  const save=h('button',{},'Сохранить изменения');
   file.onchange=async()=>{const f=file.files?.[0];if(!f)return;if(!f.type.startsWith('image/')){err.textContent='Выберите изображение';return}try{avatarUrl=await compressAvatar(f);preview.replaceChildren(avatar(avatarUrl));err.textContent=''}catch{err.textContent='Не удалось обработать фото'}};
-  const choose=h('button',{onclick:()=>file.click()},'Выбрать фото');
+  const choose=h('button',{onclick:()=>file.click()},'Выбрать фото из галереи');
   const clear=h('button',{onclick:()=>{avatarUrl=null;preview.replaceChildren(avatar(null));file.value=''}},'Убрать фото');
-  save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();show('list')}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
+  const logoutButton=h('button',{class:'logout-button',onclick:()=>confirm('Вы действительно хотите выйти из аккаунта?')&&logout()},'Выйти из аккаунта');
+  save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();history.back()}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
   setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}else{err.textContent='Не удалось загрузить профиль (HTTP '+r.status+')'}}catch{err.textContent='Не удалось связаться с сервером при загрузке профиля'}},0);
-  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
+  return h('div',{class:'col'},h('header',{class:'app-header'},h('b',{},'Настройки профиля')),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'settings-content'},preview,h('div',{class:'settings-username'},'@'+(S.username||'')),name,file,choose,clear,err,save,h('div',{id:'settings-actions',class:'settings-actions'}),logoutButton),bottomBar('settings'));
 }
 function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
 function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,msgs:[],hasOlder:false,loadingOlder:false});navigate('chat');loadMsgs()}
@@ -246,10 +269,10 @@ function chatView(){
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
   setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list)list.onscroll=()=>{if(list.scrollTop<100)loadOlderMessages()};},0);
   return h('div',{class:'col'},
-    h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),avatar(S.avatar),h('b',{},S.partner)),
+    h('header',{class:'chat-header'},h('b',{},'olo'),h('div',{class:'chat-header-person'},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),avatar(S.avatar),h('b',{},S.partner))),
     h('div',{id:'connection-status',class:'connection-status'}),
     h('div',{class:'msgs',id:'msgs'}),
-    h('footer',{},inp,h('button',{'aria-label':'Отправить',onclick:go},'Отправить')));
+    h('footer',{},inp,h('button',{'aria-label':'Отправить',onclick:go},'Отправить')),bottomBar('chat'));
 }
 
 /* ---------- WebSocket ---------- */
@@ -292,13 +315,13 @@ document.addEventListener('visibilitychange',()=>{
 window.addEventListener('offline',()=>{S.connectionStatus='ERROR';updateConnectionStatus()});
 window.addEventListener('online',()=>{if(S.token)connectWS()});
 
-function updateViewportHeight(){if(window.visualViewport)document.documentElement.style.setProperty('--app-height',window.visualViewport.height+'px')}
+function updateViewportHeight(){if(window.visualViewport){document.documentElement.style.setProperty('--app-height',window.visualViewport.height+'px');document.body.classList.toggle('keyboard-open',window.visualViewport.height<window.innerHeight-140)}}
 updateViewportHeight();window.visualViewport?.addEventListener('resize',updateViewportHeight);window.addEventListener('orientationchange',()=>setTimeout(updateViewportHeight,150));
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 window.addEventListener('olo-open-chat',event=>{const id=event.detail.chatId,c=S.chats.find(x=>x.id===id);if(c)openChat(c);else{S.pendingChatId=id;loadChats()}});
 if(S.token)start();else{history.replaceState({oloView:'auth'},'',location.href);show('auth')}
 </script>
-<script src="push.js?v=20261013-3" defer></script>
+<script src="push.js?v=20261013-4" defer></script>
 </body>
 </html>
 

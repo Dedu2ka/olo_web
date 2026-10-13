@@ -115,18 +115,17 @@
 
   function updateButton() {
     const current = session();
-    const header = document.querySelector('#app header');
-    if (!header || !current.token || header.querySelector('#push-toggle')) return;
+    const target = document.querySelector('#settings-actions');
+    if (!target || !current.token || target.querySelector('#push-toggle')) return;
     const button = document.createElement('button');
     button.id = 'push-toggle';
     button.type = 'button';
-    button.textContent = '🔔';
-    button.setAttribute('aria-label', 'Включить push-уведомления');
-    button.title = 'Включить push-уведомления';
+    button.textContent = '🔔 Уведомления';
+    button.setAttribute('aria-label', 'Настроить push-уведомления');
+    button.title = 'Push-уведомления';
     button.addEventListener('click', enable);
-    const logoutButton = [...header.querySelectorAll('button')].find(item => item.textContent.includes('Выйти'));
-    if (logoutButton) header.insertBefore(button, logoutButton);
-    else header.append(button);
+    target.append(button);
+
   }
 
   const observer = new MutationObserver(updateButton);
