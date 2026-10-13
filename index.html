@@ -62,6 +62,8 @@ S.server=API_SERVER;
 
 function h(t,p={},...c){const e=document.createElement(t);for(const k in p){if(k.startsWith('on'))e.addEventListener(k.slice(2),p[k]);else e.setAttribute(k,p[k])}e.append(...c.flat().filter(x=>x!=null&&x!==false));return e}
 function show(v){view=v;$('#app').replaceChildren(v==='auth'?authView():v==='list'?listView():v==='profile'?profileView():chatView());updateConnectionStatus()}
+function navigate(v){history.pushState({oloView:v},'',location.href);show(v)}
+window.addEventListener('popstate',()=>{if(view==='chat'){S.chatId=null;S.peerId=null;S.msgs=[];show('list');loadChats();return}if(view==='profile'){show('list');return}if(view==='list'&&S.token){history.pushState({oloView:'list'},'',location.href);return}if(view==='auth')return;show('auth')});
 function saveSession(){localStorage.setItem('olo.session',JSON.stringify({server:S.server,token:S.token,refreshToken:S.refreshToken,userId:S.userId,username:S.username}))}
 if(S.token)saveSession();
 function avatar(u){return /^data:image\//.test(u||'')?h('img',{class:'av',src:u,alt:''}):h('div',{class:'av'},'👤')}
@@ -115,7 +117,7 @@ function authView(){
   };
   return h('div',{class:'auth'},h('h1',{},'olo'),err,u,p,go,sw);
 }
-function start(){S.msgs=[];S.chatId=null;S.peerId=null;S.pendingChatId=new URLSearchParams(location.search).get('chat');connectWS();loadChats();show('list')}
+function start(){S.msgs=[];S.chatId=null;S.peerId=null;S.pendingChatId=new URLSearchParams(location.search).get('chat');history.replaceState({oloView:'list'},'',location.pathname);connectWS();loadChats();show('list')}
 async function logout(remote=true){
   if(remote&&S.token){const oldSession={server:S.server,token:S.token,refreshToken:S.refreshToken};if(window.oloDisablePush)await window.oloDisablePush(oldSession);await api('/api/v1/auth/logout',{method:'POST',body:JSON.stringify({refreshToken:S.refreshToken})}).catch(()=>{});}
   wsGen++;if(S.ws)S.ws.close();S.ws=null;
@@ -164,7 +166,7 @@ function listView(){
   };
   setTimeout(renderChats);
   return h('div',{class:'col'},
-    h('header',{},h('b',{},'olo'),h('span',{class:'sp'}),h('button',{onclick:()=>show('profile')},'Профиль'),h('button',{onclick:()=>confirm('Выйти из аккаунта?')&&logout()},'Выйти')),
+    h('header',{},h('b',{},'olo'),h('span',{class:'sp'}),h('button',{onclick:()=>navigate('profile')},'Профиль'),h('button',{onclick:()=>confirm('Выйти из аккаунта?')&&logout()},'Выйти')),
     h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'pad'},q),out);
 }
 function profileView(){
@@ -176,13 +178,13 @@ function profileView(){
   const clear=h('button',{onclick:()=>{avatarUrl=null;preview.replaceChildren(avatar(null));file.value=''}},'Убрать фото');
   save.onclick=async()=>{err.textContent='';save.disabled=true;try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null,avatarUrl})});if(!r.ok)throw new Error('Не удалось сохранить профиль ('+r.status+')');const u=await r.json();S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();show('list')}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
   setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}else{err.textContent='Не удалось загрузить профиль (HTTP '+r.status+')'}}catch{err.textContent='Не удалось связаться с сервером при загрузке профиля'}},0);
-  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>show('list')},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
+  return h('div',{class:'col'},h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),h('b',{},'Профиль'),h('span',{class:'sp'})),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'auth'},preview,h('div',{},'@'+(S.username||'')),name,file,choose,clear,err,save));
 }
 function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
-function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,msgs:[],hasOlder:false,loadingOlder:false});show('chat');loadMsgs()}
+function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,msgs:[],hasOlder:false,loadingOlder:false});navigate('chat');loadMsgs()}
 async function openWithUser(u){
   const r=await api('/api/v1/chats/direct/'+u.id);
-  if(r.status===404){Object.assign(S,{chatId:null,peerId:u.id,partner:u.displayName||u.username,avatar:u.avatarUrl,msgs:[]});show('chat')}
+  if(r.status===404){Object.assign(S,{chatId:null,peerId:u.id,partner:u.displayName||u.username,avatar:u.avatarUrl,msgs:[]});navigate('chat')}
   else if(r.ok)openChat(await r.json());
 }
 
@@ -244,7 +246,7 @@ function chatView(){
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
   setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list)list.onscroll=()=>{if(list.scrollTop<100)loadOlderMessages()};},0);
   return h('div',{class:'col'},
-    h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>{S.chatId=null;S.peerId=null;show('list');loadChats()}},'‹'),avatar(S.avatar),h('b',{},S.partner)),
+    h('header',{},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),avatar(S.avatar),h('b',{},S.partner)),
     h('div',{id:'connection-status',class:'connection-status'}),
     h('div',{class:'msgs',id:'msgs'}),
     h('footer',{},inp,h('button',{'aria-label':'Отправить',onclick:go},'Отправить')));
@@ -294,9 +296,9 @@ function updateViewportHeight(){if(window.visualViewport)document.documentElemen
 updateViewportHeight();window.visualViewport?.addEventListener('resize',updateViewportHeight);window.addEventListener('orientationchange',()=>setTimeout(updateViewportHeight,150));
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 window.addEventListener('olo-open-chat',event=>{const id=event.detail.chatId,c=S.chats.find(x=>x.id===id);if(c)openChat(c);else{S.pendingChatId=id;loadChats()}});
-if(S.token)start();else show('auth');
+if(S.token)start();else{history.replaceState({oloView:'auth'},'',location.href);show('auth')}
 </script>
-<script src="push.js?v=20261013-2" defer></script>
+<script src="push.js?v=20261013-3" defer></script>
 </body>
 </html>
 

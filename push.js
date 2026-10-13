@@ -90,7 +90,7 @@
         reason = String(reason).slice(0, 300);
         throw new Error(`Сервер не сохранил подписку (HTTP ${saved.status})${reason ? `: ${reason}` : '.'}`);
       }
-      alert('Уведомления включены.');
+      alert('Подписка сохранена на этом устройстве. Чтобы проверить доставку, отправьте сообщение этому аккаунту с другого устройства.');
       updateButton();
     } catch (error) {
       alert(error.message || 'Не удалось включить уведомления');
