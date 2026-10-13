@@ -61,8 +61,24 @@
         throw new Error('Запрос разрешения не был подтверждён. Нажмите «Разрешить» в запросе браузера и снова нажмите на колокольчик.');
       }
       const [key, registration] = await Promise.all([publicKey(), navigator.serviceWorker.ready]);
-      const subscription = await registration.pushManager.getSubscription() ||
-        await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeKey(key) });
+      const applicationServerKey = decodeKey(key);
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription) {
+        const existingKey = subscription.options?.applicationServerKey;
+        const usesCurrentKey = existingKey && encodeKey(existingKey) === encodeKey(applicationServerKey);
+        if (!usesCurrentKey) {
+          const removed = await api('/api/v1/notifications/web-push', {
+            method: 'DELETE',
+            body: JSON.stringify({ endpoint: subscription.endpoint })
+          });
+          if (!removed.ok) throw new Error(`Не удалось обновить старую подписку (HTTP ${removed.status})`);
+          await subscription.unsubscribe();
+          subscription = null;
+        }
+      }
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      }
       const saved = await api('/api/v1/notifications/web-push', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
       if (!saved.ok) {
         const body = await saved.text().catch(() => '');

@@ -28,6 +28,7 @@ self.addEventListener('push', event => {
     body: payload.body || 'У вас новое сообщение',
     icon: './icon-192.png',
     badge: './icon-192.png',
+    silent: false,
     tag: payload.chatId ? `olo-chat-${payload.chatId}` : 'olo-message',
     renotify: true,
     data: { chatId: payload.chatId || null }
