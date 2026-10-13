@@ -18,6 +18,7 @@ input,textarea{width:100%;background:var(--card);border:1px solid var(--line);bo
 <style>
 .message-actions{position:fixed;inset:0;z-index:20;background:#0008;display:flex;align-items:flex-end}.message-actions-panel{width:100%;max-height:70dvh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px 8px 0 0;padding:16px}.message-actions-panel button{display:block;width:100%;margin:6px 0;text-align:left;background:var(--surface2);color:var(--text)}.reply-preview{color:var(--accent);font-size:12px;padding:4px 8px}.presence{color:var(--mut);font-size:11px}.presence.online{color:#45a879}.message-quote{display:block;color:var(--mut);font-size:11px;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}.message-edited,.message-forwarded{display:block;color:var(--mut);font-size:10px}
 </style>
+<style>.m.jump-target{outline:2px solid var(--accent);outline-offset:3px}.message-forwarded.forwarded-author,.message-quote{display:block;padding:0;border:0;background:transparent;color:var(--accent);font:inherit;font-size:10px;text-align:left}.message-quote{color:var(--mut);font-size:11px;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}</style>
 </head>
 <body>
 <div id="app"></div>
@@ -175,7 +176,7 @@ function showMessageActions(message){
   if(message.deleted)return;
   const close=()=>document.querySelector('.message-actions')?.remove();
   const buttons=[['Ответить',()=>{S.replyTo=message;close();show('chat')}],['Переслать',async()=>{close();const chats=S.chats.filter(c=>c.id!==S.chatId);if(!chats.length){alert('Нет других чатов для пересылки');return}const choice=prompt('Введите номер чата для пересылки:\n'+chats.map((c,i)=>`${i+1}. ${c.partnerName||'Чат'}`).join('\n'));const target=chats[Number(choice)-1];if(!target)return;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}/forward`,{method:'POST',body:JSON.stringify({targetChatId:target.id})});if(!r.ok)throw Error('HTTP '+r.status);await loadChats()}catch(e){alert('Не удалось переслать сообщение: '+e.message)}}]];
-  if(message.senderId===S.userId){buttons.push(['Изменить',async()=>{close();const content=prompt('Изменить сообщение',message.content);if(content==null||!content.trim())return;if(content.length>10000){alert('Максимум 10 000 символов');return}try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'PUT',body:JSON.stringify({content})});if(!r.ok)throw Error('HTTP '+r.status);const updated=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?updated:m);renderMsgs()}catch(e){alert('Не удалось изменить сообщение: '+e.message)}}]);buttons.push(['Удалить',async()=>{close();if(!confirm('Удалить сообщение у всех участников чата?'))return;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'DELETE'});if(!r.ok)throw Error('HTTP '+r.status);const deleted=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?deleted:m);renderMsgs();loadChats()}catch(e){alert('Не удалось удалить сообщение: '+e.message)}}])}
+  if(message.senderId===S.userId){buttons.push(['Изменить',async()=>{close();const content=prompt('Изменить сообщение (до 300 символов)',message.content);if(content==null||!content.trim())return;if(Array.from(content).length>300){alert('Отредактированное сообщение должно быть не длиннее 300 символов');return}try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'PUT',body:JSON.stringify({content})});if(!r.ok)throw Error('HTTP '+r.status);const updated=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?updated:m);renderMsgs()}catch(e){alert('Не удалось изменить сообщение: '+e.message)}}]);buttons.push(['Удалить',async()=>{close();if(!confirm('Удалить сообщение у всех участников чата?'))return;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'DELETE'});if(!r.ok)throw Error('HTTP '+r.status);const deleted=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?deleted:m);renderMsgs();loadChats()}catch(e){alert('Не удалось удалить сообщение: '+e.message)}}])}
   const panel=h('div',{class:'message-actions-panel'},...buttons.map(([label,action])=>h('button',{onclick:action},label)),h('button',{onclick:close},'Закрыть'));
   const overlay=h('div',{class:'message-actions',onclick:e=>{if(e.target===overlay)close()}},panel);document.body.append(overlay)
 }
@@ -184,7 +185,9 @@ function showMessageActions(message){
 const TICK={PENDING:'…',SENT:'✓',DELIVERED:'✓✓',READ:'✓✓',FAILED:'⚠ не отправлено'};
 function msgEl(m){
   const me=m.senderId===S.userId,d=new Date(m.timestamp);
-  const el=h('div',{class:'m'+(me?' me':'')},m.forwarded?h('span',{class:'message-forwarded'},'Переслано'):null,m.replyToMessageId?h('span',{class:'message-quote'},'↪ '+(S.msgs.find(x=>x.id===m.replyToMessageId)?.content||'Ответ на сообщение')):null,m.deleted?'Сообщение удалено':m.content,m.editedAt&&!m.deleted?h('span',{class:'message-edited'},'изменено'):null,
+  const forwardLabel=m.forwarded?h('button',{class:'message-forwarded forwarded-author',onclick:()=>m.forwardedFromUserId&&openWithUser({id:m.forwardedFromUserId,displayName:m.forwardedFromName,username:m.forwardedFromName})},'Переслано от '+(m.forwardedFromName||'пользователя')):null;
+  const replyLabel=m.replyToMessageId?h('button',{class:'message-quote',onclick:()=>jumpToMessage(m.replyToMessageId)},'↪ '+(S.msgs.find(x=>x.id===m.replyToMessageId)?.content||'Ответ на сообщение')):null;
+  const el=h('div',{'data-message-id':m.id,class:'m'+(me?' me':'')},forwardLabel,replyLabel,m.deleted?'Сообщение удалено':m.content,m.editedAt&&!m.deleted?h('span',{class:'message-edited'},'изменено'):null,
     h('small',{},isNaN(d)?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),me?h('i',{class:m.status==='READ'?'rd':''},' '+(TICK[m.status]||'')):null));
   let pressTimer;el.oncontextmenu=e=>{e.preventDefault();showMessageActions(m)};el.onpointerdown=()=>{pressTimer=setTimeout(()=>showMessageActions(m),550)};el.onpointerup=()=>clearTimeout(pressTimer);el.onpointerleave=()=>clearTimeout(pressTimer);return el
 }
@@ -196,6 +199,11 @@ function renderMsgs(forceBottom=false){
   for(const message of S.msgs){const date=new Date(message.timestamp);const day=Number.isNaN(date.getTime())?'unknown':localDayKey(date);if(day!==previousDay){rows.push(h('div',{class:'message-date'},formatMessageDate(message.timestamp)));previousDay=day}rows.push(msgEl(message))}
   const stack=h('div',{class:'message-stack'});stack.replaceChildren(...rows);l.replaceChildren(stack);
   if(near)l.scrollTop=l.scrollHeight;
+}
+async function jumpToMessage(messageId){
+  while(!document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`)&&S.hasOlder&&!S.loadingOlder){await loadOlderMessages();await new Promise(resolve=>setTimeout(resolve,0))}
+  const target=document.querySelector(`[data-message-id="${CSS.escape(messageId)}"]`);
+  if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('jump-target');setTimeout(()=>target.classList.remove('jump-target'),1500)}
 }
 function markRead(){
   if(view!=='chat'||document.hidden||!S.chatId||!S.msgs.some(m=>m.senderId!==S.userId&&m.status!=='READ'))return;
@@ -220,23 +228,23 @@ async function loadOlderMessages(){
 }
 
 async function send(text,replyToMessageId=null){
-  if(text.length>10000){alert('Сообщение не должно быть длиннее 10 000 символов');return}
-  const cid=crypto.randomUUID(),now=new Date().toISOString();
-  S.msgs.push({id:cid,clientMessageId:cid,chatId:S.chatId,senderId:S.userId,content:text,status:'PENDING',timestamp:now});
-  renderMsgs();
-  const body=S.chatId?{senderId:S.userId,content:text,sentAt:now,clientMessageId:cid,replyToMessageId}:{targetUserId:S.peerId,content:text,sentAt:now,clientMessageId:cid,replyToMessageId};
-  try{
-    const r=await api(S.chatId?`/api/v1/chats/${S.chatId}/messages`:'/api/v1/chats/direct/messages',{method:'POST',body:JSON.stringify(body)});
-    if(!r.ok)throw 0;
-    const d=await r.json();
-    S.chatId=d.chatId;S.peerId=null;
-    S.msgs=S.msgs.filter(x=>x.id!==d.id&&x.clientMessageId!==cid);S.msgs.push(d);
-  }catch{const m=S.msgs.find(x=>x.clientMessageId===cid);if(m)m.status='FAILED'}
+  const parts=[];const symbols=Array.from(text);for(let i=0;i<symbols.length;i+=300)parts.push(symbols.slice(i,i+300).join(''));
+  for(let index=0;index<parts.length;index++){
+    const content=parts[index],cid=crypto.randomUUID(),now=new Date().toISOString();
+    const pending={id:cid,clientMessageId:cid,chatId:S.chatId,senderId:S.userId,content,status:'PENDING',timestamp:now};S.msgs.push(pending);renderMsgs();
+    const reply=index===0?replyToMessageId:null;
+    const body=S.chatId?{senderId:S.userId,content,sentAt:now,clientMessageId:cid,replyToMessageId:reply}:{targetUserId:S.peerId,content,sentAt:now,clientMessageId:cid,replyToMessageId:reply};
+    try{
+      const r=await api(S.chatId?`/api/v1/chats/${S.chatId}/messages`:'/api/v1/chats/direct/messages',{method:'POST',body:JSON.stringify(body)});if(!r.ok)throw Error('HTTP '+r.status);
+      const d=await r.json();S.chatId=d.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==d.id&&x.clientMessageId!==cid);S.msgs.push(d);
+    }catch{const m=S.msgs.find(x=>x.clientMessageId===cid);if(m)m.status='FAILED';break}
+    renderMsgs();
+  }
   renderMsgs();loadChats();
 }
 function chatView(){
   const inp=h('textarea',{rows:'1',placeholder:'Сообщение',maxlength:'10000'});
-  const count=h('small',{class:'chat-time'},'0/10 000');inp.oninput=()=>count.textContent=inp.value.length.toLocaleString('ru-RU')+'/10 000';
+  const count=h('small',{class:'chat-time'},'0 знаков · 0 сообщений');inp.oninput=()=>{const n=Array.from(inp.value).length;count.textContent=n.toLocaleString('ru-RU')+' знаков · '+(n?Math.ceil(n/300):0)+' сообщений'};
   const reply=S.replyTo?h('div',{class:'reply-preview'},'Ответ: '+S.replyTo.content.slice(0,70)+' ',h('button',{onclick:()=>{S.replyTo=null;show('chat')}},'×')):null;
   const go=()=>{const t=inp.value.trim();if(t){inp.value='';send(t,S.replyTo?.id);S.replyTo=null;document.querySelector('.reply-preview')?.remove()}};
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
