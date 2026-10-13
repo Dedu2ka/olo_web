@@ -296,7 +296,7 @@ if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch((
 window.addEventListener('olo-open-chat',event=>{const id=event.detail.chatId,c=S.chats.find(x=>x.id===id);if(c)openChat(c);else{S.pendingChatId=id;loadChats()}});
 if(S.token)start();else show('auth');
 </script>
-<script src="push.js" defer></script>
+<script src="push.js?v=20261013-2" defer></script>
 </body>
 </html>
 
