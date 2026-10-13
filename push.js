@@ -48,12 +48,32 @@
       return;
     }
     try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') throw new Error('Разрешение на уведомления не выдано');
+      if (Notification.permission === 'denied') {
+        throw new Error('Уведомления заблокированы для сайта. Разрешите их в настройках сайта в браузере (или в настройках приложения, если Olo установлено на главный экран), затем нажмите на колокольчик снова.');
+      }
+      const permission = Notification.permission === 'granted'
+        ? 'granted'
+        : await Notification.requestPermission();
+      if (permission === 'denied') {
+        throw new Error('Браузер заблокировал уведомления для сайта. Откройте настройки сайта рядом с адресом страницы → Уведомления → Разрешить. На Android также проверьте, что уведомления разрешены для самого браузера в настройках телефона.');
+      }
+      if (permission !== 'granted') {
+        throw new Error('Запрос разрешения не был подтверждён. Нажмите «Разрешить» в запросе браузера и снова нажмите на колокольчик.');
+      }
       const [key, registration] = await Promise.all([publicKey(), navigator.serviceWorker.ready]);
-      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeKey(key) });
+      const subscription = await registration.pushManager.getSubscription() ||
+        await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: decodeKey(key) });
       const saved = await api('/api/v1/notifications/web-push', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
-      if (!saved.ok) throw new Error('Сервер не сохранил подписку на уведомления');
+      if (!saved.ok) {
+        const body = await saved.text().catch(() => '');
+        let reason = body;
+        try {
+          const details = JSON.parse(body);
+          reason = details.detail || details.message || details.error || body;
+        } catch { /* Keep a plain-text server response as the reason. */ }
+        reason = String(reason).slice(0, 300);
+        throw new Error(`Сервер не сохранил подписку (HTTP ${saved.status})${reason ? `: ${reason}` : '.'}`);
+      }
       alert('Уведомления включены.');
       updateButton();
     } catch (error) {
