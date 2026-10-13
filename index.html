@@ -18,14 +18,20 @@ input,textarea{width:100%;background:var(--card);border:1px solid var(--line);bo
 <style>
 .message-actions{position:fixed;inset:0;z-index:20;background:#0008;display:flex;align-items:flex-end}.message-actions-panel{width:100%;max-height:70dvh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:8px 8px 0 0;padding:16px}.message-actions-panel button{display:block;width:100%;margin:6px 0;text-align:left;background:var(--surface2);color:var(--text)}.reply-preview{color:var(--accent);font-size:12px;padding:4px 8px}.presence{color:var(--mut);font-size:11px}.presence.online{color:#45a879}.message-quote{display:block;color:var(--mut);font-size:11px;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}.message-edited,.message-forwarded{display:block;color:var(--mut);font-size:10px}
 </style>
-<style>.m.jump-target{outline:2px solid var(--accent);outline-offset:3px}.message-forwarded.forwarded-author,.message-quote{display:block;padding:0;border:0;background:transparent;color:var(--accent);font:inherit;font-size:10px;text-align:left}.message-quote{color:var(--mut);font-size:11px;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}</style>
+<style>.m.jump-target{outline:2px solid var(--accent);outline-offset:3px}.message-forwarded.forwarded-author,.message-quote{display:block;padding:0;border:0;background:transparent;color:var(--accent);font:inherit;font-size:10px;text-align:left}.message-quote{color:var(--mut);font-size:11px;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}.chat-choice{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;margin:6px 0;border:1px solid var(--line);border-radius:5px;background:var(--card);cursor:pointer;text-align:left}.message-actions-panel button.chat-choice{display:flex;align-items:center;background:var(--card);color:var(--text)}.chat-choice:hover{border-color:var(--accent)}.chat-choice .av{width:42px;height:42px}.confirm-delete{padding:16px;color:var(--text)}.confirm-delete label{display:flex;align-items:center;gap:10px;margin-top:14px}.confirm-delete input[type=checkbox]{width:auto;padding:0}</style>
+<style>
+.message-row{display:flex;align-items:center;gap:4px;width:100%}.message-row.me{justify-content:flex-end}.message-row:not(.me){justify-content:flex-start}
+.message-row .m{align-self:auto}.m{user-select:none;-webkit-user-select:none;touch-action:pan-y;cursor:default}.m.selected{outline:2px solid var(--accent);outline-offset:2px;filter:brightness(1.12)}
+.message-more{display:block;padding:4px 8px;background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:50%;font-size:18px;line-height:1}
+.copy-toast{position:fixed;z-index:30;left:50%;bottom:calc(72px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--surface2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:10px 14px}
+</style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 const $=s=>document.querySelector(s);
 const API_SERVER='https://olo-chat.duckdns.org';
-const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false,connectionStatus:'DISCONNECTED',connectionStatusVisible:true};
+const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,selectedMessageId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false,connectionStatus:'DISCONNECTED',connectionStatusVisible:true};
 let view='',wsGen=0;
 let appTheme=localStorage.getItem('olo.theme')||'dark';
 function applyTheme(theme){appTheme=theme==='light'?'light':'dark';document.documentElement.dataset.theme=appTheme;localStorage.setItem('olo.theme',appTheme);const meta=document.querySelector('meta[name="theme-color"]');if(meta)meta.content=appTheme==='light'?'#e9e5ef':'#1b1a20'}
@@ -165,31 +171,63 @@ function profileView(){
   return h('div',{class:'col'},h('header',{class:'app-header'},h('b',{},'Настройки профиля')),h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'settings-content'},preview,h('div',{class:'settings-username'},'@'+(S.username||'')),name,file,choose,clear,themeSetting,err,save,h('div',{id:'settings-actions',class:'settings-actions'}),logoutButton),bottomBar('settings'));
 }
 function compressAvatar(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onerror=reject;reader.onload=()=>{const img=new Image();img.onerror=reject;img.onload=()=>{const scale=Math.min(1,512/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);resolve(canvas.toDataURL('image/jpeg',.82))};img.src=reader.result};reader.readAsDataURL(file)})}
-function openChat(c){Object.assign(S,{chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,partnerUserId:c.partnerUserId,partnerOnline:c.partnerOnline||false,partnerLastSeenAt:c.partnerLastSeenAt,msgs:[],hasOlder:false,loadingOlder:false,replyTo:null});navigate('chat');loadMsgs()}
+function openChat(c){Object.assign(S,{selectedMessageId:null,chatId:c.id,peerId:null,partner:c.partnerName||'Чат',avatar:c.partnerAvatarUrl,partnerUserId:c.partnerUserId,partnerOnline:c.partnerOnline||false,partnerLastSeenAt:c.partnerLastSeenAt,msgs:[],hasOlder:false,loadingOlder:false,replyTo:null});navigate('chat');loadMsgs()}
 async function openWithUser(u){
   const r=await api('/api/v1/chats/direct/'+u.id);
-  if(r.status===404){Object.assign(S,{chatId:null,peerId:u.id,partner:u.displayName||u.username,avatar:u.avatarUrl,partnerUserId:u.id,partnerOnline:u.online||false,partnerLastSeenAt:u.lastSeenAt,msgs:[],replyTo:null});navigate('chat')}
+  if(r.status===404){Object.assign(S,{selectedMessageId:null,chatId:null,peerId:u.id,partner:u.displayName||u.username,avatar:u.avatarUrl,partnerUserId:u.id,partnerOnline:u.online||false,partnerLastSeenAt:u.lastSeenAt,msgs:[],replyTo:null});navigate('chat')}
   else if(r.ok)openChat(await r.json());
 }
 
+async function copyMessage(message){
+  try{
+    if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(message.content);
+    else{const area=h('textarea',{});area.value=message.content;area.style.position='fixed';area.style.opacity='0';document.body.append(area);area.select();document.execCommand('copy');area.remove()}
+    showToast('Сообщение скопировано');
+  }catch{alert('Не удалось скопировать сообщение')}
+}
+function showToast(text){const toast=h('div',{class:'copy-toast'},text);document.body.append(toast);setTimeout(()=>toast.remove(),1800)}
+function selectMessage(message){S.selectedMessageId=S.selectedMessageId===message.id?null:message.id;renderMsgs()}
 function showMessageActions(message){
   if(message.deleted)return;
   const close=()=>document.querySelector('.message-actions')?.remove();
-  const buttons=[['Ответить',()=>{S.replyTo=message;close();show('chat')}],['Переслать',async()=>{close();const chats=S.chats.filter(c=>c.id!==S.chatId);if(!chats.length){alert('Нет других чатов для пересылки');return}const choice=prompt('Введите номер чата для пересылки:\n'+chats.map((c,i)=>`${i+1}. ${c.partnerName||'Чат'}`).join('\n'));const target=chats[Number(choice)-1];if(!target)return;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}/forward`,{method:'POST',body:JSON.stringify({targetChatId:target.id})});if(!r.ok)throw Error('HTTP '+r.status);await loadChats()}catch(e){alert('Не удалось переслать сообщение: '+e.message)}}]];
-  if(message.senderId===S.userId){buttons.push(['Изменить',async()=>{close();const content=prompt('Изменить сообщение (до 300 символов)',message.content);if(content==null||!content.trim())return;if(Array.from(content).length>300){alert('Отредактированное сообщение должно быть не длиннее 300 символов');return}try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'PUT',body:JSON.stringify({content})});if(!r.ok)throw Error('HTTP '+r.status);const updated=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?updated:m);renderMsgs()}catch(e){alert('Не удалось изменить сообщение: '+e.message)}}]);buttons.push(['Удалить',async()=>{close();if(!confirm('Удалить сообщение у всех участников чата?'))return;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'DELETE'});if(!r.ok)throw Error('HTTP '+r.status);const deleted=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?deleted:m);renderMsgs();loadChats()}catch(e){alert('Не удалось удалить сообщение: '+e.message)}}])}
+  const buttons=[['Копировать сообщение',()=>{close();copyMessage(message)}],['Ответить',()=>{S.replyTo=message;close();show('chat')}],['Переслать',()=>{close();showForwardPicker(message)}],['Удалить',()=>{close();showDeleteConfirmation(message)}]];
+  if(message.senderId===S.userId)buttons.push(['Изменить',async()=>{close();const content=prompt('Изменить сообщение (до 300 символов)',message.content);if(content==null||!content.trim())return;if(Array.from(content).length>300){alert('Отредактированное сообщение должно быть не длиннее 300 символов');return}try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}`,{method:'PUT',body:JSON.stringify({content})});if(!r.ok)throw Error('HTTP '+r.status);const updated=await r.json();S.msgs=S.msgs.map(m=>m.id===message.id?updated:m);renderMsgs()}catch(e){alert('Не удалось изменить сообщение: '+e.message)}}]);
   const panel=h('div',{class:'message-actions-panel'},...buttons.map(([label,action])=>h('button',{onclick:action},label)),h('button',{onclick:close},'Закрыть'));
   const overlay=h('div',{class:'message-actions',onclick:e=>{if(e.target===overlay)close()}},panel);document.body.append(overlay)
+}
+function showDeleteConfirmation(message){
+  const ownMessage=message.senderId===S.userId,overlay=h('div',{class:'message-actions'}),dialog=h('div',{class:'message-actions-panel confirm-delete'});
+  const question=h('b',{},'Вы точно хотите удалить сообщение?');
+  let deleteForEveryone=false;
+  const checkbox=ownMessage?h('label',{},h('input',{type:'checkbox'}),'Удалить у всех'):null;
+  if(checkbox)checkbox.querySelector('input').onchange=e=>{deleteForEveryone=e.target.checked};
+  const error=h('div',{class:'err'});
+  const cancel=h('button',{onclick:()=>overlay.remove()},'Отмена');
+  const confirmButton=h('button',{onclick:async()=>{confirmButton.disabled=true;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}?forEveryone=${deleteForEveryone}`,{method:'DELETE'});if(!r.ok)throw Error('HTTP '+r.status);S.msgs=S.msgs.filter(m=>m.id!==message.id);renderMsgs();loadChats();overlay.remove()}catch(e){error.textContent='Не удалось удалить сообщение: '+e.message;confirmButton.disabled=false}}},'Удалить');
+  dialog.append(question);if(checkbox)dialog.append(checkbox);dialog.append(error,cancel,confirmButton);overlay.append(dialog);document.body.append(overlay)
+}
+function showForwardPicker(message){
+  const chats=S.chats.filter(c=>c.id!==S.chatId),overlay=h('div',{class:'message-actions'}),panel=h('div',{class:'message-actions-panel'});
+  panel.append(h('b',{},'Переслать в чат'));
+  if(!chats.length)panel.append(h('p',{class:'empty'},'Нет других чатов для пересылки'));
+  for(const chat of chats){
+    const row=h('button',{class:'chat-choice',onclick:async()=>{row.disabled=true;try{const r=await api(`/api/v1/chats/${S.chatId}/messages/${message.id}/forward`,{method:'POST',body:JSON.stringify({targetChatId:chat.id})});if(!r.ok)throw Error('HTTP '+r.status);await loadChats();overlay.remove()}catch(e){alert('Не удалось переслать сообщение: '+e.message);row.disabled=false}}},avatar(chat.partnerAvatarUrl),h('span',{},chat.partnerName||'Чат'));
+    panel.append(row)
+  }
+  panel.append(h('button',{onclick:()=>overlay.remove()},'Отмена'));overlay.append(panel);document.body.append(overlay)
 }
 
 /* ---------- диалог ---------- */
 const TICK={PENDING:'…',SENT:'✓',DELIVERED:'✓✓',READ:'✓✓',FAILED:'⚠ не отправлено'};
 function msgEl(m){
-  const me=m.senderId===S.userId,d=new Date(m.timestamp);
+  const me=m.senderId===S.userId,d=new Date(m.timestamp),selected=S.selectedMessageId===m.id;
   const forwardLabel=m.forwarded?h('button',{class:'message-forwarded forwarded-author',onclick:()=>m.forwardedFromUserId&&openWithUser({id:m.forwardedFromUserId,displayName:m.forwardedFromName,username:m.forwardedFromName})},'Переслано от '+(m.forwardedFromName||'пользователя')):null;
   const replyLabel=m.replyToMessageId?h('button',{class:'message-quote',onclick:()=>jumpToMessage(m.replyToMessageId)},'↪ '+(S.msgs.find(x=>x.id===m.replyToMessageId)?.content||'Ответ на сообщение')):null;
-  const el=h('div',{'data-message-id':m.id,class:'m'+(me?' me':'')},forwardLabel,replyLabel,m.deleted?'Сообщение удалено':m.content,m.editedAt&&!m.deleted?h('span',{class:'message-edited'},'изменено'):null,
+  const el=h('div',{'data-message-id':m.id,class:'m'+(me?' me':'')+(selected?' selected':'')},forwardLabel,replyLabel,m.content,m.editedAt&&!m.deleted?h('span',{class:'message-edited'},'изменено'):null,
     h('small',{},isNaN(d)?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),me?h('i',{class:m.status==='READ'?'rd':''},' '+(TICK[m.status]||'')):null));
-  let pressTimer;el.oncontextmenu=e=>{e.preventDefault();showMessageActions(m)};el.onpointerdown=()=>{pressTimer=setTimeout(()=>showMessageActions(m),550)};el.onpointerup=()=>clearTimeout(pressTimer);el.onpointerleave=()=>clearTimeout(pressTimer);return el
+  const menu=h('button',{class:'message-more','aria-label':'Действия с сообщением',title:'Действия',onclick:e=>{e.stopPropagation();showMessageActions(m)}},'⋮');
+  const row=h('div',{class:'message-row'+(me?' me':'')+(selected?' selected':'')},...(me?[menu,el]:[el,menu]));
+  el.oncontextmenu=e=>{e.preventDefault();showMessageActions(m)};el.onclick=e=>{if(e.target.closest('button'))return;S.selectedMessageId=m.id;renderMsgs();showMessageActions(m)};return row
 }
 function renderMsgs(forceBottom=false){
   const l=$('#msgs');if(!l)return;
@@ -287,8 +325,12 @@ function onEvent(e){
     loadChats();
   }else if(e.type==='MESSAGE_STATUS'&&e.chatId===S.chatId){
     const m=S.msgs.find(x=>x.id===e.id);if(m){m.status=e.status;renderMsgs()}
-  }else if((e.type==='EDIT_MESSAGE'||e.type==='DELETE_MESSAGE')&&e.chatId===S.chatId){
-    S.msgs=S.msgs.map(m=>m.id===e.id?{...m,content:e.content||'',deleted:!!e.deleted||e.type==='DELETE_MESSAGE',editedAt:e.editedAt}:m);renderMsgs();loadChats()
+  }else if(e.type==='EDIT_MESSAGE'){
+    if(e.chatId===S.chatId){S.msgs=S.msgs.map(m=>m.id===e.id?{...m,content:e.content||'',editedAt:e.editedAt}:m);renderMsgs()}
+    loadChats()
+  }else if(e.type==='DELETE_MESSAGE'||e.type==='DELETE_FOR_ME'){
+    if(e.chatId===S.chatId){S.msgs=S.msgs.filter(m=>m.id!==e.id);renderMsgs()}
+    loadChats()
   }else if(e.type==='PRESENCE'){
     S.chats=S.chats.map(c=>c.partnerUserId===e.userId?{...c,partnerOnline:e.online,partnerLastSeenAt:e.lastSeenAt}:c);
     S.searchResults=(S.searchResults||[]).map(u=>u.id===e.userId?{...u,online:e.online,lastSeenAt:e.lastSeenAt}:u);
