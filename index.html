@@ -129,7 +129,7 @@ function formatChatTime(value){if(!value)return'';const date=new Date(value);if(
 function formatMessageDate(value){const date=new Date(value);if(Number.isNaN(date.getTime()))return'';const now=new Date(),yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(localDayKey(date)===localDayKey(now))return'Сегодня';if(localDayKey(date)===localDayKey(yesterday))return'Вчера';return new Intl.DateTimeFormat([], {day:'numeric',month:'long',year:'numeric'}).format(date)}
 function chatRow(c){
   const content=c.lastMessage||'Нет сообщений';
-  const sender=c.lastMessageSenderId===S.userId?'Вы':c.lastMessageSenderId?(c.partnerUsername?.trim()?c.partnerUsername.trim().slice(0,4):(c.partnerUserId||c.lastMessageSenderId)):'';
+  const sender=c.lastMessageSenderId===S.userId?'Вы':c.lastMessageSenderId?(c.partnerDisplayName?.trim()|| (c.partnerUsername?.trim()?c.partnerUsername.trim().slice(0,4):(c.partnerUserId||c.lastMessageSenderId))):'';
   const preview=sender?`${sender}: ${content}`:content;
   return h('div',{class:'row',onclick:()=>openChat(c)},avatar(c.partnerAvatarUrl),h('div',{class:'t'},h('b',{},c.partnerName||'Чат'),h('span',{},preview)),h('div',{class:'chat-meta'},c.lastMessageAt?h('span',{class:'chat-time'},formatChatTime(c.lastMessageAt)):null,c.unreadCount>0?h('em',{},c.unreadCount>99?'99+':String(c.unreadCount)):null))
 }
