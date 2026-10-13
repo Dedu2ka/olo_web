@@ -38,6 +38,7 @@ header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var
 em{background:#5B67F1;border-radius:11px;padding:1px 7px;font-size:11px;font-style:normal}
 .empty{color:var(--mut);text-align:center;padding:24px}
 .msgs{flex:1;overflow:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.message-date{align-self:center;margin:10px 0;padding:5px 12px;border-radius:999px;background:#25284e;color:var(--mut);font-size:12px}
 .m{max-width:80%;padding:10px 12px;border-radius:12px 12px 12px 2px;background:var(--them);white-space:pre-wrap;word-break:break-word;align-self:flex-start}
 .m.me{background:var(--me);border-radius:12px 12px 2px 12px;align-self:flex-end}
 .m small{display:block;text-align:right;font-size:10px;color:#bfc3ff}
@@ -53,7 +54,7 @@ footer textarea{resize:none;max-height:120px}
 <script>
 const $=s=>document.querySelector(s);
 const API_SERVER='https://olo-chat.duckdns.org';
-const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false,connectionStatus:'DISCONNECTED'};
+const S={server:API_SERVER,token:null,refreshToken:null,userId:null,username:null,chats:[],msgs:[],chatId:null,peerId:null,partner:'',avatar:'',q:'',ws:null,retry:0,hasOlder:false,loadingOlder:false,connectionStatus:'DISCONNECTED',connectionStatusVisible:true};
 let view='',wsGen=0;
 try{Object.assign(S,JSON.parse(localStorage.getItem('olo.session')||'{}'))}catch{}
 S.server=API_SERVER;
@@ -122,7 +123,9 @@ async function logout(remote=true){
 }
 
 /* ---------- список чатов и поиск ---------- */
-function formatChatTime(value){if(!value)return'';const date=new Date(value);return Number.isNaN(date.getTime())?'':new Intl.DateTimeFormat([], {hour:'2-digit',minute:'2-digit'}).format(date)}
+function localDayKey(date){return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`}
+function formatChatTime(value){if(!value)return'';const date=new Date(value);if(Number.isNaN(date.getTime()))return'';return localDayKey(date)===localDayKey(new Date())?new Intl.DateTimeFormat([], {hour:'2-digit',minute:'2-digit'}).format(date):new Intl.DateTimeFormat([], {day:'2-digit',month:'2-digit',year:'numeric'}).format(date)}
+function formatMessageDate(value){const date=new Date(value);if(Number.isNaN(date.getTime()))return'';const now=new Date(),yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(localDayKey(date)===localDayKey(now))return'Сегодня';if(localDayKey(date)===localDayKey(yesterday))return'Вчера';return new Intl.DateTimeFormat([], {day:'numeric',month:'long',year:'numeric'}).format(date)}
 function chatRow(c){
   const content=c.lastMessage||'Нет сообщений';
   const sender=c.lastMessageSenderId===S.userId?'Вы':c.lastMessageSenderId?(c.partnerName||'Собеседник'):'';
@@ -189,11 +192,13 @@ function msgEl(m){
   return h('div',{class:'m'+(me?' me':'')},m.content,
     h('small',{},isNaN(d)?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),me?h('i',{class:m.status==='READ'?'rd':''},' '+(TICK[m.status]||'')):null));
 }
-function renderMsgs(){
+function renderMsgs(forceBottom=false){
   const l=$('#msgs');if(!l)return;
-  const near=l.scrollHeight-l.scrollTop-l.clientHeight<80;
+  const near=forceBottom||l.scrollHeight-l.scrollTop-l.clientHeight<80;
   S.msgs.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
-  l.replaceChildren(...S.msgs.map(msgEl));
+  const rows=[];let previousDay=null;
+  for(const message of S.msgs){const date=new Date(message.timestamp);const day=Number.isNaN(date.getTime())?'unknown':localDayKey(date);if(day!==previousDay){rows.push(h('div',{class:'message-date'},formatMessageDate(message.timestamp)));previousDay=day}rows.push(msgEl(message))}
+  l.replaceChildren(...rows);
   if(near)l.scrollTop=l.scrollHeight;
 }
 function markRead(){
@@ -208,7 +213,7 @@ async function loadMsgs(){
     const list=await r.json();S.hasOlder=list.length===50;
     const pend=S.msgs.filter(m=>m.status==='PENDING'||m.status==='FAILED');
     S.msgs=[...new Map([...S.msgs,...list,...pend].map(m=>[m.id,m])).values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
-    renderMsgs();markRead();
+    renderMsgs(true);markRead();
   }catch{}
 }
 async function loadOlderMessages(){
@@ -248,23 +253,23 @@ function chatView(){
 function closeWS(){wsGen++;if(S.ws)S.ws.close();S.ws=null}
 async function connectWS(){
   closeWS();if(!S.token)return;
-  S.connectionStatus=S.retry?'RECONNECTING':'CONNECTING';updateConnectionStatus();
+  S.connectionStatus=S.retry?'RECONNECTING':'CONNECTING';S.connectionStatusVisible=true;updateConnectionStatus();
   const id=wsGen;
   try{
     const r=await api('/api/v1/ws-ticket',{method:'POST'});if(!r.ok)throw 0;
     const {ticket}=await r.json();if(id!==wsGen)return;
     const ws=new WebSocket(S.server.replace(/^http/,'ws')+'/ws?ticket='+encodeURIComponent(ticket));S.ws=ws;
-    ws.onopen=()=>{S.retry=0;S.connectionStatus='CONNECTED';updateConnectionStatus();loadChats();loadMsgs()};
+    ws.onopen=()=>{S.retry=0;S.connectionStatus='CONNECTED';S.connectionStatusVisible=true;updateConnectionStatus();loadChats();loadMsgs();setTimeout(()=>{if(S.ws===ws&&S.connectionStatus==='CONNECTED'){S.connectionStatusVisible=false;updateConnectionStatus()}},2200)};
     ws.onmessage=e=>{try{onEvent(JSON.parse(e.data))}catch{}};
     ws.onerror=()=>{if(id===wsGen){S.connectionStatus='ERROR';updateConnectionStatus()}};
     ws.onclose=()=>{if(id===wsGen){S.connectionStatus='RECONNECTING';updateConnectionStatus();retry()}};
   }catch{if(id===wsGen){S.connectionStatus='ERROR';updateConnectionStatus();retry()}}
 }
-function retry(){S.connectionStatus='RECONNECTING';updateConnectionStatus();setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
+function retry(){S.connectionStatus='RECONNECTING';S.connectionStatusVisible=true;updateConnectionStatus();setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
 function updateConnectionStatus(){
   const el=$('#connection-status');if(!el)return;
   const states={CONNECTING:['Подключаемся к серверу…','reconnecting'],CONNECTED:['Подключено','connected'],RECONNECTING:['Связь прервалась, переподключаемся…','reconnecting'],ERROR:['Ошибка соединения','error'],DISCONNECTED:['Нет соединения','error']};
-  const [label,style]=states[S.connectionStatus]||states.DISCONNECTED;el.textContent='●  '+label;el.className='connection-status '+style;
+  const [label,style]=states[S.connectionStatus]||states.DISCONNECTED;el.textContent='●  '+label;el.className='connection-status '+style;el.hidden=S.connectionStatus==='CONNECTED'&&!S.connectionStatusVisible;
 }
 function onEvent(e){
   if(e.type==='NEW_MESSAGE'){
