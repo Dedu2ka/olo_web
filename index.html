@@ -30,6 +30,20 @@ input,textarea{width:100%;background:var(--card);border:1px solid var(--line);bo
 .bottom-bar button{width:50%}.favorite-pinned{border-color:var(--accent)}.pinned-label{font-size:11px;color:var(--mut)}.favorite-list{padding:16px;display:flex;flex-direction:column;justify-content:flex-end;gap:10px}.favorite-message{position:relative;align-self:flex-end;max-width:min(82%,620px);min-width:180px;padding:10px 42px 10px 12px;background:var(--me);color:var(--me-text);border-radius:8px 8px 2px 8px;cursor:pointer;white-space:pre-wrap;overflow-wrap:anywhere}.favorite-message button{position:absolute;right:6px;top:6px;padding:4px 8px;background:transparent;color:inherit}.favorite-source,.favorite-message small{display:block;font-size:10px;color:var(--mut);margin-bottom:4px}.favorite-message small{text-align:right;margin:4px 0 0}
 </style>
 <style>.group-settings-card{max-height:90dvh;overflow-y:auto}.group-member-list{width:100%;max-height:36dvh;overflow:auto;display:flex;flex-direction:column;gap:6px}.group-member-row{width:100%;cursor:default;text-align:left}.group-member-row .av{width:36px;height:36px}.attachment-menu{position:fixed;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));z-index:50;min-width:0;padding:18px 16px max(22px,env(safe-area-inset-bottom));background:var(--card);border:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -8px 28px #0006}.sticker-panel:not([hidden]){position:fixed;left:0;right:0;bottom:calc(60px + env(safe-area-inset-bottom));z-index:55;max-height:60vh;border-radius:16px 16px 0 0;box-shadow:0 -8px 28px #0006}.attachment-image{background:#111}.attachment-image .media-loading{display:grid;min-height:72px;place-items:center;color:#bbb;font-size:12px}.attachment-pending{display:flex;align-items:center;justify-content:space-between;padding:8px;background:var(--surface2);border-radius:6px;margin-bottom:5px}.viewer-zoom{display:flex;align-items:center;justify-content:center;gap:8px}.viewer-zoom button{background:var(--surface2);color:var(--text);padding:6px 12px}</style>
+<style>
+.attachment-group{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px;max-width:min(68vw,420px)}
+.attachment-group.single{display:block}
+.attachment-group .attachment-image{width:100%;min-width:0;max-width:none;margin:0}
+.attachment-group .attachment-image img{width:100%;max-height:280px;object-fit:cover}
+.attachment-viewer-top{display:flex;align-items:center;justify-content:space-between;width:100%;color:var(--mut)}
+.attachment-close{align-self:auto}
+.attachment-media-row{display:flex;align-items:center;gap:6px;max-width:96vw}
+.attachment-media{display:grid;place-items:center;min-width:0;min-height:180px;touch-action:pan-y}
+.attachment-media img,.attachment-media video{max-width:min(82vw,1000px);max-height:76dvh;object-fit:contain}
+.attachment-media .media-loading{padding:70px 24px;color:var(--mut)}
+.attachment-nav{padding:6px 10px;background:var(--surface2);color:var(--text)}
+.attachment-nav:disabled{visibility:hidden}
+</style>
 </head>
 <body>
 <div id="app"></div>
@@ -227,11 +241,13 @@ function showDeleteConfirmation(message){
 }
 const attachmentObjectUrls=new Map();
 async function attachmentBlobUrl(message){
-  if(attachmentObjectUrls.has(message.id))return attachmentObjectUrls.get(message.id);
+  const key=message.id+':'+message.attachmentUrl;if(attachmentObjectUrls.has(key))return attachmentObjectUrls.get(key);
   const r=await api(message.attachmentUrl);if(!r.ok)throw Error('HTTP '+r.status);
-  const url=URL.createObjectURL(await r.blob());attachmentObjectUrls.set(message.id,url);return url
+  const url=URL.createObjectURL(await r.blob());attachmentObjectUrls.set(key,url);return url
 }
-function attachmentEl(message){
+function messageAttachments(message){return message.attachments?.length?message.attachments.map(a=>({...message,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})):message.attachmentUrl?[message]:[]}
+function attachmentEl(message){const files=messageAttachments(message);if(!files.length)return null;return h('div',{class:'attachment-group'+(files.length===1?' single':'')},...files.map(file=>singleAttachmentEl(file)))}
+function singleAttachmentEl(message){
   if(!message.attachmentUrl)return null;
   const type=message.attachmentContentType||'',image=type.startsWith('image/'),video=type.startsWith('video/');
   const open=()=>openAttachment(message);
@@ -240,12 +256,21 @@ function attachmentEl(message){
   return button
 }
 function formatBytes(size){if(!Number.isFinite(Number(size)))return 'Файл';const n=Number(size);return n>=1048576?(n/1048576).toFixed(1)+' МБ':n>=1024?Math.round(n/1024)+' КБ':n+' Б'}
-async function openAttachment(message){try{const url=await attachmentBlobUrl(message),video=(message.attachmentContentType||'').startsWith('video/'),media=video?h('video',{src:url,controls:'',autoplay:'',playsinline:''}):h('img',{src:url,alt:'Фото'});let scale=1;const close=()=>overlay.remove(),panel=h('div',{class:'attachment-viewer'},h('button',{class:'attachment-close',onclick:close},'×'),media);if(!video){const setScale=value=>{scale=Math.max(1,Math.min(5,value));media.style.transform=`scale(${scale})`;media.style.cursor=scale>1?'zoom-out':'zoom-in'};media.style.transformOrigin='center';media.style.transition='transform .12s';media.style.cursor='zoom-in';media.addEventListener('wheel',e=>{e.preventDefault();setScale(scale+(e.deltaY<0?.25:-.25))},{passive:false});panel.append(h('div',{class:'viewer-zoom'},h('button',{type:'button',onclick:()=>setScale(scale-.25)},'−'),h('button',{type:'button',onclick:()=>setScale(1)},'Сбросить'),h('button',{type:'button',onclick:()=>setScale(scale+.25)},'+')))}panel.append(h('div',{class:'attachment-viewer-footer'},h('button',{onclick:()=>downloadAttachment(message)},'Скачать')));const overlay=h('div',{class:'attachment-overlay',onclick:e=>{if(e.target===overlay)close()}},panel);document.body.append(overlay)}catch(e){alert('Не удалось открыть файл: '+e.message)}}
+async function openAttachment(message){
+  let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||''));if(S.chatId){try{const r=await api(`/api/v1/chats/${S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0;
+  const close=()=>overlay.remove(),mediaBox=h('div',{class:'attachment-media'}),counter=h('small',{}),prev=h('button',{class:'attachment-nav',onclick:()=>show(index-1)},'‹'),next=h('button',{class:'attachment-nav',onclick:()=>show(index+1)},'›');
+  const panel=h('div',{class:'attachment-viewer'},h('div',{class:'attachment-viewer-top'},counter,h('button',{class:'attachment-close',onclick:close},'×')),h('div',{class:'attachment-media-row'},prev,mediaBox,next));
+  const zoom=h('div',{class:'viewer-zoom'});panel.append(zoom,h('div',{class:'attachment-viewer-footer'},h('button',{onclick:()=>downloadAttachment(all[index])},'Скачать')));
+  const overlay=h('div',{class:'attachment-overlay',onclick:e=>{if(e.target===overlay)close()}},panel);document.body.append(overlay);
+  async function show(nextIndex){index=Math.max(0,Math.min(all.length-1,nextIndex));scale=1;const item=all[index];counter.textContent=all.length>1?`${index+1} / ${all.length}`:'';prev.disabled=index===0;next.disabled=index===all.length-1;mediaBox.replaceChildren(h('span',{class:'media-loading'},'Загрузка…'));zoom.replaceChildren();try{const url=await attachmentBlobUrl(item),video=(item.attachmentContentType||'').startsWith('video/'),media=video?h('video',{src:url,controls:'',autoplay:'',playsinline:''}):h('img',{src:url,alt:'Фото'});mediaBox.replaceChildren(media);if(!video){const setScale=value=>{scale=Math.max(1,Math.min(5,value));media.style.transform=`scale(${scale})`;media.style.cursor=scale>1?'zoom-out':'zoom-in'};media.style.transformOrigin='center';media.style.transition='transform .12s';media.style.cursor='zoom-in';media.addEventListener('wheel',e=>{e.preventDefault();setScale(scale+(e.deltaY<0?.25:-.25))},{passive:false});zoom.append(h('button',{type:'button',onclick:()=>setScale(scale-.25)},'−'),h('button',{type:'button',onclick:()=>setScale(1)},'Сбросить'),h('button',{type:'button',onclick:()=>setScale(scale+.25)},'+'))}}catch{mediaBox.replaceChildren(h('span',{class:'media-loading'},'Не удалось открыть вложение'))}}
+  mediaBox.addEventListener('touchstart',e=>{startX=e.touches[0].clientX},{passive:true});mediaBox.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-startX;if(Math.abs(dx)>55)show(index+(dx<0?-1:1))},{passive:true});await show(index)
+}
 async function downloadAttachment(message){try{const url=await attachmentBlobUrl(message),a=h('a',{href:url,download:message.attachmentName||'file'});document.body.append(a);a.click();a.remove()}catch(e){alert('Не удалось скачать файл: '+e.message)}}
-async function sendAttachment(file,caption=''){
-  if(!file)return;if(file.size>50*1024*1024){alert('Максимальный размер файла — 50 МБ');return}
-  const body=new FormData();body.append('file',file,file.name||'file');if(caption.trim())body.append('content',caption.trim());
-  try{const path=S.chatId?`/api/v1/chats/${S.chatId}/attachments`:`/api/v1/chats/direct/${S.peerId}/attachments`,r=await api(path,{method:'POST',body});if(!r.ok)throw Error('HTTP '+r.status);const m=await r.json();S.chatId=m.chatId;S.peerId=null;if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){alert('Не удалось отправить файл: '+e.message)}
+async function sendAttachments(files,caption=''){
+  if(!files?.length)return;if(files.some(file=>file.size>50*1024*1024)||files.reduce((sum,file)=>sum+file.size,0)>100*1024*1024){alert('Ограничение: до 50 МБ на файл и до 100 МБ на сообщение');return}
+  const localId='upload-'+crypto.randomUUID(),pending={id:localId,chatId:S.chatId,senderId:S.userId,content:caption?`${caption}\n📎 Отправляется ${files.length} вложений…`:`Отправка ${files.length} вложений…`,status:'PENDING',timestamp:new Date().toISOString()};S.msgs.push(pending);renderMsgs(true);
+  const body=new FormData();for(const file of files)body.append('files',file,file.name||'file');if(caption.trim())body.append('content',caption.trim());
+  try{const path=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,r=await api(path,{method:'POST',body});if(!r.ok)throw Error('HTTP '+r.status);const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',content:caption||`Не удалось отправить ${files.length} вложений`}:x);renderMsgs(true);alert('Не удалось отправить вложения: '+e.message)}
 }
 function showForwardPicker(message){
   const chats=S.chats.filter(c=>c.id!==S.chatId),overlay=h('div',{class:'message-actions'}),panel=h('div',{class:'message-actions-panel'});
@@ -272,7 +297,7 @@ function msgEl(m){
 }
 function renderMsgs(forceBottom=false){
   const l=$('#msgs');if(!l)return;
-  const liveAttachments=new Set(S.msgs.map(m=>m.id));for(const [id,url] of attachmentObjectUrls){if(!liveAttachments.has(id)){URL.revokeObjectURL(url);attachmentObjectUrls.delete(id)}}
+  const liveAttachments=new Set(S.msgs.map(m=>m.id));for(const [key,url] of attachmentObjectUrls){if(![...liveAttachments].some(id=>key.startsWith(id+':'))){URL.revokeObjectURL(url);attachmentObjectUrls.delete(key)}}
   const near=forceBottom||l.scrollHeight-l.scrollTop-l.clientHeight<80;
   S.msgs.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
   const rows=[];let previousDay=null;
@@ -322,7 +347,7 @@ async function send(text,replyToMessageId=null){
   }
   renderMsgs();loadChats();
 }
-async function sendSticker(item){if(item.emoji){send(item.emoji);return}try{const r=await api(item.url);if(!r.ok)throw Error('download');const blob=await r.blob();await sendAttachment(new File([blob],item.fileName||'sticker.png',{type:item.contentType||blob.type||'image/png'}))}catch{alert('Не удалось отправить стикер')}}
+async function sendSticker(item){if(item.emoji){send(item.emoji);return}try{const r=await api(item.url);if(!r.ok)throw Error('download');const blob=await r.blob();await sendAttachments([new File([blob],item.fileName||'sticker.png',{type:item.contentType||blob.type||'image/png'})])}catch{alert('Не удалось отправить стикер')}}
 async function showStickers(panel){panel.replaceChildren(h('b',{},'Стикеры'),h('button',{type:'button',onclick:async()=>{const name=prompt('Название набора');if(!name?.trim())return;const r=await api('/api/v1/stickers/packs',{method:'POST',body:JSON.stringify({name:name.trim()})});if(!r.ok){alert('Не удалось создать набор');return}await loadStickerPacks();showStickers(panel)}},'＋ Создать набор'));for(const pack of S.stickerPacks){panel.append(h('div',{class:'sticker-pack-title'},pack.name));if(!pack.added&&!pack.builtIn){panel.append(h('button',{type:'button',onclick:async()=>{const r=await api(`/api/v1/stickers/packs/${pack.id}/add`,{method:'POST'});if(!r.ok){alert('Не удалось добавить набор');return}await loadStickerPacks();showStickers(panel)}},'Добавить себе'));continue}if(pack.owner){const upload=h('input',{type:'file',accept:'image/*'});upload.onchange=async()=>{const file=upload.files?.[0];if(!file)return;const form=new FormData();form.append('file',file);const r=await api(`/api/v1/stickers/packs/${pack.id}/stickers`,{method:'POST',body:form});if(!r.ok){alert('Не удалось загрузить стикер (лимит 2 МБ, только изображения)');return}await loadStickerPacks();showStickers(panel)};panel.append(upload)}for(const item of pack.stickers||[]){if(item.emoji){panel.append(h('button',{class:'sticker-item',onclick:()=>sendSticker(item)},item.emoji));continue}const b=h('button',{class:'sticker-item',onclick:()=>sendSticker(item)},'…');const r=await api(item.url);if(r.ok){const url=URL.createObjectURL(await r.blob());b.replaceChildren(h('img',{src:url,alt:'Стикер'}))}panel.append(b)}}}
 async function loadStickerPacks(){try{const r=await api('/api/v1/stickers/packs');if(r.ok)S.stickerPacks=await r.json()}catch{}}
 async function manageGroup(){
@@ -359,9 +384,9 @@ async function viewGroupInfo(){
 }
 function chatView(){
   const inp=h('textarea',{rows:'1',placeholder:'Сообщение',maxlength:'10000'});
-  const mediaInput=h('input',{type:'file',accept:'image/*,video/*',class:'avatar-input'}),fileInput=h('input',{type:'file',class:'avatar-input'});
-  let pendingFile=null;const pending=h('div',{class:'attachment-pending'});pending.hidden=true;
-  for(const input of [mediaInput,fileInput])input.onchange=()=>{pendingFile=input.files?.[0]||null;pending.hidden=!pendingFile;pending.replaceChildren(pendingFile&&pendingFile.type.startsWith('image/')?h('span',{},'Фото прикреплено'):h('span',{},'Файл прикреплён'),h('button',{onclick:()=>{pendingFile=null;pending.hidden=true}},'×'));input.value=''};
+  const mediaInput=h('input',{type:'file',accept:'image/*,video/*',multiple:'',class:'avatar-input'}),fileInput=h('input',{type:'file',multiple:'',class:'avatar-input'});
+  let pendingFiles=[];const pending=h('div',{class:'attachment-pending'});pending.hidden=true;
+  for(const input of [mediaInput,fileInput])input.onchange=()=>{pendingFiles=[...pendingFiles,...Array.from(input.files||[])];pending.hidden=!pendingFiles.length;pending.replaceChildren(h('span',{},`${pendingFiles.length} вложений прикреплено`),h('button',{onclick:()=>{pendingFiles=[];pending.hidden=true}},'×'));input.value=''};
   const stickerPanel=h('div',{class:'sticker-panel'});stickerPanel.hidden=true;
   const attachmentMenu=h('div',{class:'attachment-menu'});attachmentMenu.hidden=true;attachmentMenu.style.display='none';const closeAttachmentMenu=()=>{attachmentMenu.hidden=true;attachmentMenu.style.display='none'};
   const chooseMedia=h('button',{type:'button',onclick:()=>{closeAttachmentMenu();mediaInput.click()}},h('span',{},'▧'),h('span',{},'Галерея'));
@@ -372,7 +397,7 @@ function chatView(){
   const attachments=h('div',{class:'attachment-toolbar'},h('button',{type:'button','aria-label':'Добавить вложение',onclick:()=>{attachmentMenu.hidden=!attachmentMenu.hidden;attachmentMenu.style.display=attachmentMenu.hidden?'none':'grid'}},'+'),attachmentMenu);
   const count=h('small',{class:'chat-time'},'0 знаков · 0 сообщений');inp.oninput=()=>{const n=Array.from(inp.value).length;count.textContent=n.toLocaleString('ru-RU')+' знаков · '+(n?Math.ceil(n/300):0)+' сообщений'};
   const reply=S.replyTo?h('div',{class:'reply-preview'},'Ответ: '+S.replyTo.content.slice(0,70)+' ',h('button',{onclick:()=>{S.replyTo=null;show('chat')}},'×')):null;
-  const go=()=>{const t=inp.value.trim();if(pendingFile){sendAttachment(pendingFile,t);pendingFile=null;pending.hidden=true;inp.value='';S.replyTo=null;return}if(t){inp.value='';send(t,S.replyTo?.id);S.replyTo=null;document.querySelector('.reply-preview')?.remove()}};
+  const go=()=>{const t=inp.value.trim();if(pendingFiles.length){const files=pendingFiles;pendingFiles=[];pending.hidden=true;sendAttachments(files,t);inp.value='';S.replyTo=null;return}if(t){inp.value='';send(t,S.replyTo?.id);S.replyTo=null;document.querySelector('.reply-preview')?.remove()}};
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
   setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list)list.onscroll=()=>{if(list.scrollTop<100)loadOlderMessages()};},0);
   return h('div',{class:'col'},
