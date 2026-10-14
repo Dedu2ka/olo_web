@@ -275,8 +275,8 @@ async function downloadAttachment(message){try{const url=await attachmentBlobUrl
 async function sendAttachments(files,caption=''){
   if(!files?.length)return;if(files.some(file=>file.size>50*1024*1024)||files.reduce((sum,file)=>sum+file.size,0)>100*1024*1024){alert('Ограничение: до 50 МБ на файл и до 100 МБ на сообщение');return}
   const localId='upload-'+crypto.randomUUID(),pending={id:localId,chatId:S.chatId,senderId:S.userId,content:caption?`${caption}\n📎 Отправляется ${files.length} вложений…`:`Отправка ${files.length} вложений…`,status:'PENDING',timestamp:new Date().toISOString()};S.msgs.push(pending);renderMsgs(true);
-  const body=new FormData();for(const file of files)body.append('files',file,file.name||'file');
-  try{const base=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,path=caption.trim()?`${base}?content=${encodeURIComponent(caption.trim())}`:base,r=await api(path,{method:'POST',body});if(!r.ok)throw Error('HTTP '+r.status);const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',content:caption||`Не удалось отправить ${files.length} вложений`}:x);renderMsgs(true);alert('Не удалось отправить вложения: '+e.message)}
+  const single=files.length===1,body=new FormData();for(const file of files)body.append(single?'file':'files',file,file.name||'file');if(single&&caption.trim())body.append('content',caption.trim());
+  try{const base=S.chatId?`/api/v1/chats/${S.chatId}/attachments`:`/api/v1/chats/direct/${S.peerId}/attachments`,batchBase=base+'/batch',path=single?base:(caption.trim()?`${batchBase}?content=${encodeURIComponent(caption.trim())}`:batchBase),r=await api(path,{method:'POST',body});if(!r.ok){const detail=(await r.text()).slice(0,500);throw Error(`HTTP ${r.status}${detail?': '+detail:''}`)}const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',content:caption||`Не удалось отправить ${files.length} вложений`}:x);renderMsgs(true);alert('Не удалось отправить вложения: '+e.message)}
 }
 function showForwardPicker(message){
   const chats=S.chats.filter(c=>c.id!==S.chatId),overlay=h('div',{class:'message-actions'}),panel=h('div',{class:'message-actions-panel'});
@@ -303,7 +303,6 @@ function msgEl(m){
 }
 function renderMsgs(forceBottom=false){
   const l=$('#msgs');if(!l)return;
-  const liveAttachments=new Set(S.msgs.map(m=>m.id));for(const [key,url] of attachmentObjectUrls){if(![...liveAttachments].some(id=>key.startsWith(id+':'))){URL.revokeObjectURL(url);attachmentObjectUrls.delete(key)}}
   const near=forceBottom||l.scrollHeight-l.scrollTop-l.clientHeight<80;
   S.msgs.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
   const rows=[];let previousDay=null;
