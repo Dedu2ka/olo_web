@@ -37,9 +37,15 @@ input,textarea{width:100%;background:var(--card);border:1px solid var(--line);bo
 .attachment-group .attachment-image img{width:100%;max-height:280px;object-fit:cover}
 .attachment-viewer-top{display:flex;align-items:center;justify-content:space-between;width:100%;color:var(--mut)}
 .attachment-close{align-self:auto}
+.attachment-overlay{padding:0}
+.attachment-viewer{width:100vw;height:100dvh;max-width:none;max-height:none;border:0;border-radius:0;padding:0;background:#000;gap:0}
+.attachment-viewer-top{position:absolute;z-index:2;top:max(8px,env(safe-area-inset-top));left:0;padding:4px 12px;color:#fff}
+.attachment-viewer .viewer-icon,.attachment-viewer .attachment-close{display:grid;place-items:center;width:42px;height:42px;margin-left:8px;padding:0;border:1px solid #ffffff44;border-radius:50%;background:#111a;color:#fff;font-size:24px}
+.attachment-viewer .viewer-zoom{position:absolute;z-index:2;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);padding:4px 8px;border-radius:24px;background:#111a}
 .attachment-media-row{display:flex;align-items:center;gap:6px;max-width:96vw}
-.attachment-media{display:grid;place-items:center;min-width:0;min-height:180px;touch-action:pan-y}
-.attachment-media img,.attachment-media video{max-width:min(82vw,1000px);max-height:76dvh;object-fit:contain}
+.attachment-media-row{width:100%;height:100%;max-width:none;gap:0}
+.attachment-media{display:grid;place-items:center;flex:1;min-width:0;height:100%;touch-action:pan-y}
+.attachment-media img,.attachment-media video{width:100%;height:100%;max-width:100vw;max-height:100dvh;object-fit:contain}
 .attachment-media .media-loading{padding:70px 24px;color:var(--mut)}
 .attachment-nav{padding:6px 10px;background:var(--surface2);color:var(--text)}
 .attachment-nav:disabled{visibility:hidden}
@@ -259,8 +265,8 @@ function formatBytes(size){if(!Number.isFinite(Number(size)))return 'Файл';c
 async function openAttachment(message){
   let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||''));if(S.chatId){try{const r=await api(`/api/v1/chats/${S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0;
   const close=()=>overlay.remove(),mediaBox=h('div',{class:'attachment-media'}),counter=h('small',{}),prev=h('button',{class:'attachment-nav',onclick:()=>show(index-1)},'‹'),next=h('button',{class:'attachment-nav',onclick:()=>show(index+1)},'›');
-  const panel=h('div',{class:'attachment-viewer'},h('div',{class:'attachment-viewer-top'},counter,h('button',{class:'attachment-close',onclick:close},'×')),h('div',{class:'attachment-media-row'},prev,mediaBox,next));
-  const zoom=h('div',{class:'viewer-zoom'});panel.append(zoom,h('div',{class:'attachment-viewer-footer'},h('button',{onclick:()=>downloadAttachment(all[index])},'Скачать')));
+  const panel=h('div',{class:'attachment-viewer'},h('div',{class:'attachment-viewer-top'},counter,h('button',{class:'viewer-icon',title:'Скачать','aria-label':'Скачать',onclick:()=>downloadAttachment(all[index])},'↓'),h('button',{class:'attachment-close',title:'Закрыть','aria-label':'Закрыть',onclick:close},'×')),h('div',{class:'attachment-media-row'},prev,mediaBox,next));
+  const zoom=h('div',{class:'viewer-zoom'});panel.append(zoom);
   const overlay=h('div',{class:'attachment-overlay',onclick:e=>{if(e.target===overlay)close()}},panel);document.body.append(overlay);
   async function show(nextIndex){index=Math.max(0,Math.min(all.length-1,nextIndex));scale=1;const item=all[index];counter.textContent=all.length>1?`${index+1} / ${all.length}`:'';prev.disabled=index===0;next.disabled=index===all.length-1;mediaBox.replaceChildren(h('span',{class:'media-loading'},'Загрузка…'));zoom.replaceChildren();try{const url=await attachmentBlobUrl(item),video=(item.attachmentContentType||'').startsWith('video/'),media=video?h('video',{src:url,controls:'',autoplay:'',playsinline:''}):h('img',{src:url,alt:'Фото'});mediaBox.replaceChildren(media);if(!video){const setScale=value=>{scale=Math.max(1,Math.min(5,value));media.style.transform=`scale(${scale})`;media.style.cursor=scale>1?'zoom-out':'zoom-in'};media.style.transformOrigin='center';media.style.transition='transform .12s';media.style.cursor='zoom-in';media.addEventListener('wheel',e=>{e.preventDefault();setScale(scale+(e.deltaY<0?.25:-.25))},{passive:false});zoom.append(h('button',{type:'button',onclick:()=>setScale(scale-.25)},'−'),h('button',{type:'button',onclick:()=>setScale(1)},'Сбросить'),h('button',{type:'button',onclick:()=>setScale(scale+.25)},'+'))}}catch{mediaBox.replaceChildren(h('span',{class:'media-loading'},'Не удалось открыть вложение'))}}
   mediaBox.addEventListener('touchstart',e=>{startX=e.touches[0].clientX},{passive:true});mediaBox.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-startX;if(Math.abs(dx)>55)show(index+(dx<0?-1:1))},{passive:true});await show(index)
@@ -269,8 +275,8 @@ async function downloadAttachment(message){try{const url=await attachmentBlobUrl
 async function sendAttachments(files,caption=''){
   if(!files?.length)return;if(files.some(file=>file.size>50*1024*1024)||files.reduce((sum,file)=>sum+file.size,0)>100*1024*1024){alert('Ограничение: до 50 МБ на файл и до 100 МБ на сообщение');return}
   const localId='upload-'+crypto.randomUUID(),pending={id:localId,chatId:S.chatId,senderId:S.userId,content:caption?`${caption}\n📎 Отправляется ${files.length} вложений…`:`Отправка ${files.length} вложений…`,status:'PENDING',timestamp:new Date().toISOString()};S.msgs.push(pending);renderMsgs(true);
-  const body=new FormData();for(const file of files)body.append('files',file,file.name||'file');if(caption.trim())body.append('content',caption.trim());
-  try{const path=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,r=await api(path,{method:'POST',body});if(!r.ok)throw Error('HTTP '+r.status);const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',content:caption||`Не удалось отправить ${files.length} вложений`}:x);renderMsgs(true);alert('Не удалось отправить вложения: '+e.message)}
+  const body=new FormData();for(const file of files)body.append('files',file,file.name||'file');
+  try{const base=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,path=caption.trim()?`${base}?content=${encodeURIComponent(caption.trim())}`:base,r=await api(path,{method:'POST',body});if(!r.ok)throw Error('HTTP '+r.status);const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',content:caption||`Не удалось отправить ${files.length} вложений`}:x);renderMsgs(true);alert('Не удалось отправить вложения: '+e.message)}
 }
 function showForwardPicker(message){
   const chats=S.chats.filter(c=>c.id!==S.chatId),overlay=h('div',{class:'message-actions'}),panel=h('div',{class:'message-actions-panel'});
