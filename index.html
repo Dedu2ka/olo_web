@@ -66,7 +66,7 @@ async function refreshSession(){
   return refreshInFlight;
 }
 async function api(path,opt={}){
-  const send=()=>fetch(S.server+path,{...opt,headers:{...(opt.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(S.token?{Authorization:'Bearer '+S.token}:{}),...opt.headers}});
+  const send=()=>fetch(S.server+path,{cache:'no-store',...opt,headers:{...(opt.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(S.token?{Authorization:'Bearer '+S.token}:{}),...opt.headers}});
   let r=await send();
   const authEndpoint=/\/auth\/(login|register|refresh|logout)/.test(path);
   if(r.status===401&&S.token&&!authEndpoint){
@@ -434,6 +434,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 window.addEventListener('offline',()=>{S.connectionStatus='ERROR';updateConnectionStatus()});
 window.addEventListener('online',()=>{if(S.token)connectWS()});
+setInterval(()=>{if(S.token&&view==='list'&&!document.hidden)loadChats()},30000);
 
 function updateViewportHeight(){if(window.visualViewport){document.documentElement.style.setProperty('--app-height',window.visualViewport.height+'px');document.body.classList.toggle('keyboard-open',window.visualViewport.height<window.innerHeight-140)}}
 updateViewportHeight();window.visualViewport?.addEventListener('resize',updateViewportHeight);window.addEventListener('orientationchange',()=>setTimeout(updateViewportHeight,150));
