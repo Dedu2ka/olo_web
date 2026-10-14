@@ -12,6 +12,7 @@ const avatar = id => `/api/v1/users/${id}/avatar?v=${VERSION}`;
 async function messenger(page, expireAvatar = false) {
   let refreshCalls = 0;
   const sent = [];
+  const uploads = [];
   let members = [
     { userId: OWNER, username: 'alice', displayName: 'Алиса', avatarUrl: avatar(OWNER), role: 'OWNER' },
     { userId: BOB, username: 'bob', displayName: 'Борис', avatarUrl: avatar(BOB), role: 'MEMBER' }
@@ -38,6 +39,10 @@ async function messenger(page, expireAvatar = false) {
       return route.fulfill({ status: req.method() === 'POST' ? 204 : 200, ...(req.method() === 'POST' ? { body: '' } : { json: members }) });
     }
     if (path.endsWith('/stickers/packs')) return route.fulfill({ json: packs });
+    if (path.endsWith('/attachments/batch')) {
+      uploads.push({ path, body: req.postData() });
+      return route.fulfill({ json: { id: 'attachment-' + uploads.length, chatId: CHAT, senderId: OWNER, content: '', timestamp: new Date().toISOString(), status: 'SENT', attachments: [] } });
+    }
     if (path.endsWith('/messages')) {
       if (req.method() === 'POST') { const content = req.postDataJSON().content; sent.push(content); return route.fulfill({ json: { id: 'message-' + sent.length, chatId: CHAT, senderId: OWNER, content, timestamp: new Date().toISOString(), status: 'SENT' } }); }
       return route.fulfill({ json: [] });
@@ -46,7 +51,7 @@ async function messenger(page, expireAvatar = false) {
   });
   await page.goto('/');
   await expect(page.getByText('Команда', { exact: true })).toBeVisible();
-  return { sent, refreshCalls: () => refreshCalls };
+  return { sent, uploads, refreshCalls: () => refreshCalls };
 }
 
 async function openGroup(page) {
@@ -77,7 +82,7 @@ test('аватары группы и участников переживают �
 test('кнопка прикрепления находится над файлами; фото исключены из документов', async ({ page }, testInfo) => {
   await messenger(page); await openGroup(page);
   await page.getByRole('button', { name: 'Добавить вложение', exact: true }).click();
-  await page.getByRole('button', { name: 'Файлы', exact: true }).click();
+  await page.locator('.olo-picker-tabs').getByRole('button', { name: /Файлы/ }).click();
   await page.locator('.olo-attachment-picker input[type=file]').nth(1).setInputFiles([
     { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Document') },
     { name: 'photo.png', mimeType: 'image/png', buffer: png },
@@ -93,11 +98,11 @@ test('кнопка прикрепления находится над файла
   await expect(page.getByText('2 вложений прикреплено', { exact: true })).toBeVisible();
 });
 
-test('стикеры имеют отдельную панель с наборами, сеткой и недавними', async ({ page }, testInfo) => {
+test('стикеры в третьей вкладке имеют наборы, сетку и недавние', async ({ page }, testInfo) => {
   const state = await messenger(page); await openGroup(page);
-  await page.getByRole('button', { name: 'Стикеры', exact: true }).click();
-  await expect(page.locator('.sticker-panel')).toBeVisible();
-  await expect(page.locator('.olo-attachment-picker')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Добавить вложение', exact: true }).click();
+  await page.locator('.olo-picker-tabs').getByRole('button', { name: /Стикеры/ }).click();
+  await expect(page.locator('.olo-attachment-picker .sticker-panel')).toBeVisible();
   await page.getByRole('button', { name: 'Коты', exact: true }).click();
   await expect(page.locator('.sticker-grid img')).toBeVisible();
   await expect.poll(() => page.locator('.sticker-grid img').evaluate(img => img.naturalWidth)).toBeGreaterThan(0);
@@ -110,8 +115,23 @@ test('стикеры имеют отдельную панель с набора�
   await page.locator('.sticker-cell').first().click();
   await expect.poll(() => state.sent.length).toBe(1);
   expect(state.sent[0]).toBe('🙂');
-  await page.getByRole('button', { name: 'Стикеры', exact: true }).click();
+  await page.getByRole('button', { name: 'Добавить вложение', exact: true }).click();
+  await page.locator('.olo-picker-tabs').getByRole('button', { name: /Стикеры/ }).click();
   await page.getByRole('button', { name: 'Недавние стикеры', exact: true }).click();
   await expect(page.locator('.sticker-cell')).toHaveCount(1);
   await expect(page.locator('.sticker-cell')).toHaveText('🙂');
+});
+
+test('одна фотография отправляется как files через общий маршрут вложений', async ({ page }, testInfo) => {
+  const state = await messenger(page); await openGroup(page);
+  await page.getByRole('button', { name: 'Добавить вложение', exact: true }).click();
+  await page.locator('.olo-attachment-picker input[type=file]').first().setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: png });
+  await expect(page.locator('.olo-gallery-item')).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath('gallery-dark.png') });
+  await page.getByRole('button', { name: 'Прикрепить (1)', exact: true }).click();
+  await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+  await expect.poll(() => state.uploads.length).toBe(1);
+  expect(state.uploads[0].path).toBe(`/api/v1/chats/${CHAT}/attachments/batch`);
+  expect(state.uploads[0].body).toContain('name="files"');
+  expect(state.uploads[0].body).toContain('filename="photo.png"');
 });
