@@ -19,8 +19,8 @@ test('вход, поиск, профиль и отправка сообщени�
   await page.getByPlaceholder('Логин').fill('alice');
   await page.getByPlaceholder('Пароль').fill('StrongPass1!');
   await page.getByRole('button', { name: 'Войти' }).click();
-  await expect(page.getByPlaceholder('Поиск пользователей')).toBeVisible();
-  await page.getByPlaceholder('Поиск пользователей').fill('bob');
+  await expect(page.getByPlaceholder('Поиск сообщений · @логин или ID пользователя')).toBeVisible();
+  await page.getByPlaceholder('Поиск сообщений · @логин или ID пользователя').fill('bob');
   await expect(page.getByText('Bob', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Чат', exact: true }).click();
   await page.getByPlaceholder('Сообщение').fill('hello');
