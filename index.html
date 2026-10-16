@@ -328,7 +328,68 @@ function chatRow(c){
 }
 function userRow(u){const photo=avatar(u.avatarUrl);photo.title='Открыть профиль';photo.onclick=e=>{e.stopPropagation();viewUserProfile(u.id)};return h('div',{class:'row','data-user-id':u.id},photo,h('div',{class:'t',onclick:()=>viewUserProfile(u.id)},h('b',{},u.displayName||u.username),u.displayName?h('span',{},'@'+u.username):null,h('span',{class:'presence'+(u.online?' online':'')},presenceLabel(u.online,u.lastSeenAt))),h('button',{type:'button',title:'Написать',onclick:()=>openWithUser(u)},'Чат'))}
 async function viewUserProfile(userId){try{const r=await api('/api/v1/users/'+encodeURIComponent(userId));if(!r.ok)throw Error('HTTP '+r.status);const user=await r.json();const overlay=h('div',{class:'profile-overlay',onclick:e=>{if(e.target===overlay)overlay.remove()}});const photo=avatar(user.avatarUrl);photo.className+=' profile-avatar';photo.title='Открыть аватар';photo.onclick=()=>openAvatar(user.avatarUrl,`/api/v1/users/${user.id}/avatars`);const card=h('div',{class:'profile-card'},photo,h('h2',{},user.displayName||user.username),h('div',{},'@'+user.username),h('div',{class:'presence'+(user.online?' online':'')},presenceLabel(user.online,user.lastSeenAt)),h('button',{type:'button',onclick:()=>{overlay.remove();openWithUser(user)}},'Написать'));const chat=S.chats.find(c=>c.type!=='GROUP'&&c.partnerUserId===user.id);if(chat)card.append(attachmentBrowser(chat.id));card.append(h('button',{type:'button',onclick:()=>overlay.remove()},'Закрыть'));overlay.append(card);document.body.append(overlay)}catch{alert('Не удалось загрузить профиль')}}
-function attachmentBrowser(chatId){const box=h('div',{class:'profile-attachments'},h('b',{},'Вложения'));const tabs=h('div',{class:'profile-attachment-tabs'}),items=h('div',{class:'profile-attachment-items'},'Загрузка…');box.append(tabs,items);(async()=>{try{const r=await api(`/api/v1/chats/${chatId}/media`);if(!r.ok)throw Error('HTTP '+r.status);const files=(await r.json()).flatMap(group=>(group.attachments||[]).map(a=>({attachmentUrl:a.url,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,id:group.messageId,chatId:group.chatId,timestamp:group.timestamp})));const sections=[['Медиа',f=>/^(image|video)\//.test(f.attachmentContentType||'')],['Файлы',f=>!/^(image|video)\//.test(f.attachmentContentType||'')],['Ссылки',()=>false]];const choose=async(label,predicate)=>{tabs.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.textContent===label));if(label==='Ссылки'){items.classList.remove('media-grid');items.textContent='Загрузка…';const response=await api(`/api/v1/chats/${chatId}/links`);const links=response.ok?await response.json():[];items.replaceChildren(...(links.length?links.map(link=>h('a',{class:'chat-choice',href:link.url,target:'_blank',rel:'noopener noreferrer'},link.url)):[h('div',{class:'empty'},'Ссылок пока нет')]));return}const matches=files.filter(predicate);if(label==='Медиа'){items.classList.add('media-grid');items.replaceChildren(...(matches.length?matches.map(f=>{const cell=h('button',{type:'button',class:'profile-media-cell',title:'Открыть',onclick:()=>{const previous=S.chatId;S.chatId=chatId;openAttachment(f).finally(()=>{S.chatId=previous})}},'▧');attachmentBlobUrl(f).then(url=>{if(cell.isConnected)cell.replaceChildren(f.attachmentContentType?.startsWith('video/')?h('video',{src:url,muted:'',playsinline:'',preload:'metadata'}):h('img',{src:url,alt:'Фото',loading:'lazy'}))}).catch(()=>{});return cell}):[h('div',{class:'empty'},'Пока пусто')]));return}items.classList.remove('media-grid');items.replaceChildren(...(matches.length?matches.map(f=>h('button',{type:'button',class:'chat-choice',onclick:()=>{if(/^(image|video)\//.test(f.attachmentContentType||'')){const previous=S.chatId;S.chatId=chatId;openAttachment(f).finally(()=>{S.chatId=previous})}else downloadAttachment(f)}},/^(image|video)\//.test(f.attachmentContentType||'')?'▧':'⇩',h('span',{},f.attachmentName||'Вложение'))):[h('div',{class:'empty'},'Пока пусто')]))};for(const [label,predicate] of sections)tabs.append(h('button',{type:'button',onclick:()=>choose(label,predicate)},label));choose(...sections[0])}catch{items.textContent='Не удалось загрузить вложения'}})();return box}
+function attachmentBrowser(chatId){
+  const box=h('div',{class:'profile-attachments'},h('b',{},'Вложения'));
+  const tabs=h('div',{class:'profile-attachment-tabs'}),items=h('div',{class:'profile-attachment-items'},'Загрузка…');
+  box.append(tabs,items);
+  const jump=async id=>{
+    box.closest('.profile-overlay')?.remove();
+    const chat=S.chats.find(c=>c.id===chatId);
+    if(chat&&S.chatId!==chatId)await openChat(chat);
+    else if(view!=='chat')navigate('chat');
+    await jumpToMessage(id);
+  };
+  const hold=(element,id)=>{
+    let timer=null,opened=false;
+    element.addEventListener('contextmenu',event=>{event.preventDefault();opened=true;jump(id)});
+    element.addEventListener('pointerdown',event=>{if(event.pointerType==='mouse')return;opened=false;timer=setTimeout(()=>{opened=true;jump(id)},550)});
+    for(const name of ['pointerup','pointercancel','pointerleave'])element.addEventListener(name,()=>clearTimeout(timer));
+    element.addEventListener('click',event=>{if(opened){event.preventDefault();event.stopImmediatePropagation();opened=false}},true);
+    return element;
+  };
+  (async()=>{
+    try{
+      const response=await api(`/api/v1/chats/${chatId}/media`);
+      if(!response.ok)throw Error('HTTP '+response.status);
+      const files=(await response.json()).flatMap(group=>(group.attachments||[]).map(a=>({
+        attachmentUrl:a.url,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,
+        id:group.messageId,chatId:group.chatId,timestamp:group.timestamp
+      })));
+      const sections=[
+        ['Медиа',f=>/^(image|video)\//.test(f.attachmentContentType||'')&&!(f.attachmentName||'').startsWith('olo-circle-')&&!isStickerAttachment(f)],
+        ['Файлы',f=>!/^(image|video)\//.test(f.attachmentContentType||'')&&!(f.attachmentName||'').startsWith('olo-voice-')],
+        ['Ссылки',()=>false]
+      ];
+      const choose=async(label,predicate)=>{
+        tabs.querySelectorAll('button').forEach(button=>button.classList.toggle('active',button.textContent===label));
+        if(label==='Ссылки'){
+          items.classList.remove('media-grid');
+          items.textContent='Загрузка…';
+          const r=await api(`/api/v1/chats/${chatId}/links`);
+          const links=r.ok?await r.json():[];
+          items.replaceChildren(...(links.length?links.map(link=>hold(h('a',{class:'chat-choice',href:link.url,target:'_blank',rel:'noopener noreferrer'},link.url),link.messageId)):[h('div',{class:'empty'},'Ссылок пока нет')]));
+          return;
+        }
+        const matches=files.filter(predicate);
+        items.classList.toggle('media-grid',label==='Медиа');
+        if(label==='Медиа'){
+          items.replaceChildren(...(matches.length?matches.map(f=>{
+            const cell=hold(h('button',{type:'button',class:'profile-media-cell',title:'Открыть',onclick:()=>{
+              const previous=S.chatId;S.chatId=chatId;openAttachment(f).finally(()=>{S.chatId=previous})
+            }},'▧'),f.id);
+            attachmentBlobUrl(f).then(url=>{if(cell.isConnected)cell.replaceChildren(f.attachmentContentType?.startsWith('video/')?h('video',{src:url,muted:'',playsinline:'',preload:'metadata'}):h('img',{src:url,alt:'Фото',loading:'lazy'}))}).catch(()=>{});
+            return cell;
+          }):[h('div',{class:'empty'},'Пока пусто')]));
+          return;
+        }
+        items.replaceChildren(...(matches.length?matches.map(f=>hold(h('button',{type:'button',class:'chat-choice',onclick:()=>downloadAttachment(f)},'⇩',h('span',{},f.attachmentName||'Вложение')),f.id)):[h('div',{class:'empty'},'Пока пусто')]));
+      };
+      for(const [label,predicate] of sections)tabs.append(h('button',{type:'button',onclick:()=>choose(label,predicate)},label));
+      choose(...sections[0]);
+    }catch{items.textContent='Не удалось загрузить вложения'}
+  })();
+  return box;
+}
 async function openAvatar(url,historyPath,onDeleted){
   const path=historyPath||url?.replace(/\/avatar(?:\?v=.*)?$/, '/avatars');
   let urls=[];
@@ -354,8 +415,9 @@ function renderChats(){
   const l=$('#list');if(!l||S.q)return;
   const favorite=h('div',{class:'row favorite-pinned',onclick:()=>{navigate('favorites');loadFavorites()}},h('div',{class:'av'},'★'),h('div',{class:'t'},h('b',{},'Избранное'),h('span',{},S.favorites.length?S.favorites.at(-1)?.content||S.favorites.at(-1)?.attachmentName||'Сохранённое сообщение':'Сохранённые сообщения')),h('span',{class:'pinned-label'},'Закреплено'));
   const active=S.chats.filter(c=>!c.archivedAt),archived=S.chats.filter(c=>c.archivedAt);
-  const archive=archived.length?h('div',{class:'row archive-row',onclick:()=>{archiveOpen=!archiveOpen;renderChats()}},h('div',{class:'av'},'▣'),h('div',{class:'t'},h('b',{},'Архив'),h('span',{},`${archived.length} чатов`)),h('span',{},archiveOpen?'⌃':'⌄')):null;
-  l.replaceChildren(favorite,archive,...(archiveOpen?sortedChats(archived).map(chatRow):[]),h('div',{class:'chat-list-label'},'Ваши чаты'),...(active.length?sortedChats(active).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
+  const archive=archived.length?h('div',{class:'row archive-row',onclick:()=>{archiveOpen=!archiveOpen;renderChats()}},h('div',{class:'av'},'▣'),h('div',{class:'t'},h('b',{},archiveOpen?'Назад к чатам':'Архив'),h('span',{},`${archived.length} чатов`)),h('span',{},archiveOpen?'⌃':'⌄')):null;
+  const visible=archiveOpen?archived:active;
+  l.replaceChildren(...(archiveOpen?[]:[favorite]),archive,h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
 }
 async function loadChats(){
   try{
@@ -539,7 +601,7 @@ function singleAttachmentEl(message){
 }
 function formatBytes(size){if(!Number.isFinite(Number(size)))return 'Файл';const n=Number(size);return n>=1048576?(n/1048576).toFixed(1)+' МБ':n>=1024?Math.round(n/1024)+' КБ':n+' Б'}
 async function openAttachment(message){
-  let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||'')&&!isStickerAttachment(m));if(S.chatId){try{const r=await api(`/api/v1/chats/${S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')&&!isStickerAttachment(a)).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0,startY=0,offsetX=0,offsetY=0,pinchDistance=0,pinchScale=1,wasPinch=false;const pointers=new Map();
+  let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||'')&&!isStickerAttachment(m)&&!(m.attachmentName||'').startsWith('olo-circle-'));if(S.chatId){try{const r=await api(`/api/v1/chats/${S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')&&!isStickerAttachment(a)&&!(a.fileName||'').startsWith('olo-circle-')).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0,startY=0,offsetX=0,offsetY=0,pinchDistance=0,pinchScale=1,wasPinch=false;const pointers=new Map();
   const close=()=>{document.removeEventListener('keydown',viewerKeys);overlay.remove()},mediaBox=h('div',{class:'attachment-media'}),counter=h('small',{}),prev=h('button',{class:'attachment-nav',onclick:()=>show(index-1)},'‹'),next=h('button',{class:'attachment-nav',onclick:()=>show(index+1)},'›');
   const panel=h('div',{class:'attachment-viewer'},h('div',{class:'attachment-viewer-top'},counter,h('button',{class:'viewer-icon',title:'Скачать','aria-label':'Скачать',onclick:()=>downloadAttachment(all[index])},'↓'),h('button',{class:'attachment-close',title:'Закрыть','aria-label':'Закрыть',onclick:close},'×')),h('div',{class:'attachment-media-row'},prev,mediaBox,next));
   const zoom=h('div',{class:'viewer-zoom'});panel.append(zoom);
