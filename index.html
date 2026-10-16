@@ -415,6 +415,7 @@ function renderChats(){
   const l=$('#list');if(!l||S.q)return;
   const favorite=h('div',{class:'row favorite-pinned',onclick:()=>{navigate('favorites');loadFavorites()}},h('div',{class:'av'},'★'),h('div',{class:'t'},h('b',{},'Избранное'),h('span',{},S.favorites.length?S.favorites.at(-1)?.content||S.favorites.at(-1)?.attachmentName||'Сохранённое сообщение':'Сохранённые сообщения')),h('span',{class:'pinned-label'},'Закреплено'));
   const active=S.chats.filter(c=>!c.archivedAt),archived=S.chats.filter(c=>c.archivedAt);
+  if(archiveOpen&&!archived.length)archiveOpen=false;
   const archive=archived.length?h('div',{class:'row archive-row',onclick:()=>{archiveOpen=!archiveOpen;renderChats()}},h('div',{class:'av'},'▣'),h('div',{class:'t'},h('b',{},archiveOpen?'Назад к чатам':'Архив'),h('span',{},`${archived.length} чатов`)),h('span',{},archiveOpen?'⌃':'⌄')):null;
   const visible=archiveOpen?archived:active;
   l.replaceChildren(...(archiveOpen?[]:[favorite]),archive,h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
