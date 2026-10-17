@@ -110,7 +110,7 @@ test('стикеры в третьей вкладке имеют наборы, �
   await page.getByRole('button', { name: 'Улыбки', exact: true }).click();
   await page.screenshot({ path: testInfo.outputPath('sticker-grid-dark.png') });
   await page.evaluate(() => document.documentElement.dataset.theme='light');
-  await expect(page.locator('.sticker-picker-title')).toHaveCSS('color', 'rgb(40, 36, 49)');
+  await expect(page.locator('.sticker-picker-title')).toHaveCSS('color', 'rgb(36, 26, 48)');
   await page.screenshot({ path: testInfo.outputPath('sticker-grid-light.png') });
   await page.locator('.sticker-cell').first().click();
   await expect.poll(() => state.sent.length).toBe(1);
