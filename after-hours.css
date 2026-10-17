@@ -146,9 +146,9 @@ footer { background: var(--card); border-top: 1px solid var(--line); }
 .sticker-panel:not([hidden]), .attachment-menu { border-top: 1px solid var(--line); box-shadow: 0 -8px 24px #0004; }
 .record-overlay { background: #08070ac7; }
 .record-overlay.voice .record-panel {
-  bottom: calc(88px + env(safe-area-inset-bottom));
-  width: calc(100% - 24px);
-  max-width: 456px;
+  bottom: calc(72px + env(safe-area-inset-bottom));
+  width: max-content;
+  max-width: calc(100% - 24px);
   min-height: 44px;
   flex-direction: row;
   align-items: center;
@@ -161,6 +161,12 @@ footer { background: var(--card); border-top: 1px solid var(--line); }
 .record-overlay.voice .record-timer { color: var(--text); font-size: 16px; white-space: nowrap; }
 .record-overlay.voice .record-hint { margin-left: auto; font-size: 11px; color: var(--mut); }
 .record-overlay.voice .record-actions { width: auto; margin-left: auto; }
+.record-overlay.voice .record-hint { margin-left: 12px; }
+.donate-row, .olo-picker-header, .olo-picker-tools, .olo-recent-title, .olo-doc-meta b { color: var(--text); }
+.olo-document-row { min-height: 66px; border: 1px solid var(--line); }
+.olo-document-row .olo-doc-meta b { font-size: 15px; line-height: 1.25; overflow-wrap: anywhere; white-space: normal; }
+.olo-document-row .olo-doc-meta small, .olo-file-sources small { color: var(--mut); }
+.olo-file-sources button, .olo-picker-tabs button, .olo-picker-tools button { color: var(--text); }
 .record-overlay.circle { background: #08070ac7; }
 .record-overlay.circle .record-preview { border: 3px solid var(--accent); }
 .record-overlay.circle .record-flip { background: transparent; color: var(--accent); padding: 8px 12px; }

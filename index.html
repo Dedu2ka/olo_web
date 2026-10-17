@@ -449,11 +449,11 @@ async function createGroup(){const overlay=h('div',{class:'profile-overlay'}),ca
 function renderChats(){
   const l=$('#list');if(!l||S.q)return;
   const favorite=h('div',{class:'row favorite-pinned',onclick:openFavoritesChat},h('div',{class:'av'},'★'),h('div',{class:'t'},h('b',{},'Избранное'),h('span',{},S.favorites.length?S.favorites[0]?.content||S.favorites[0]?.attachmentName||'Сохранённое сообщение':'Личный чат')),h('span',{class:'pinned-label'},'Закреплено'));
-  const active=S.chats.filter(c=>!c.archivedAt),archived=S.chats.filter(c=>c.archivedAt);
+  const official=S.chats.filter(c=>c.official&&!c.archivedAt),active=S.chats.filter(c=>!c.archivedAt&&!c.official),archived=S.chats.filter(c=>c.archivedAt);
   if(archiveOpen&&!archived.length)archiveOpen=false;
   const archive=archived.length?h('div',{class:'row archive-row',onclick:()=>{archiveOpen=!archiveOpen;renderChats()}},h('div',{class:'av'},'▣'),h('div',{class:'t'},h('b',{},archiveOpen?'Назад к чатам':'Архив'),h('span',{},`${archived.length} чатов`)),h('span',{},archiveOpen?'⌃':'⌄')):null;
   const visible=archiveOpen?archived:active;
-  l.replaceChildren(...(archiveOpen?[]:[favorite]),archive,h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
+  l.replaceChildren(...(archiveOpen?[]:[favorite,...official.map(chatRow)]),archive,h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
 }
 async function loadChats(){
   try{
