@@ -41,7 +41,7 @@
 }
 
 html, body, #app { background: var(--bg); color: var(--text); }
-body { font-family: Arial, "Segoe UI", sans-serif; }
+body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
 button, input, textarea, select { font-family: inherit; }
 button, input, textarea, select,
 .row, .favorite-pinned, .settings-card, .settings-name-card input,
