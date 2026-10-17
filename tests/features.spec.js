@@ -20,9 +20,9 @@ test('архив, поиск сообщений и переключение ак
   await page.getByText('Борис').click({ button: 'right' });
   await page.getByRole('button', { name: 'В архив' }).click();
   await expect(page.getByText('Архив')).toBeVisible();
-  await page.getByPlaceholder('Поиск сообщений · @логин или ID пользователя').fill('Привет');
+  await page.getByPlaceholder('Сообщения · @логин или ID').fill('Привет');
   await expect(page.getByText('Привет', { exact: true })).toBeVisible();
-  await page.getByPlaceholder('Поиск сообщений · @логин или ID пользователя').fill('');
+  await page.getByPlaceholder('Сообщения · @логин или ID').fill('');
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page.getByRole('button', { name: 'Добавить аккаунт' }).click();
   await page.getByPlaceholder('Логин').fill('bob');
@@ -30,5 +30,5 @@ test('архив, поиск сообщений и переключение ак
   await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page.getByRole('button', { name: '@alice' }).click();
-  await expect(page.getByPlaceholder('Поиск сообщений · @логин или ID пользователя')).toBeVisible();
+  await expect(page.getByPlaceholder('Сообщения · @логин или ID')).toBeVisible();
 });
