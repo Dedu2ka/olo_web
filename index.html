@@ -324,6 +324,7 @@ function formatMessageDate(value){const date=new Date(value);if(Number.isNaN(dat
 function presenceLabel(online,lastSeenAt){if(online)return'В сети';if(!lastSeenAt)return'Не в сети';const d=new Date(lastSeenAt);if(Number.isNaN(d.getTime()))return'Не в сети';return'Был(а) в сети '+d.toLocaleString([],{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}
 function sortedChats(chats){return [...chats].sort((a,b)=>{if(Boolean(a.official)!==Boolean(b.official))return a.official?-1:1;if(Boolean(a.pinnedAt)!==Boolean(b.pinnedAt))return a.pinnedAt?-1:1;if(a.pinnedAt&&b.pinnedAt)return new Date(b.pinnedAt)-new Date(a.pinnedAt);return new Date(b.lastMessageAt||0)-new Date(a.lastMessageAt||0)})}
 let archiveOpen=false;
+let quickChatsOpen=false;
 function chatActions(chat){
   navigator.vibrate?.(12);
   const overlay=h('div',{class:'chat-actions-overlay',onclick:e=>{if(e.target===overlay)overlay.remove()}});
@@ -453,7 +454,9 @@ function renderChats(){
   if(archiveOpen&&!archived.length)archiveOpen=false;
   const archive=archived.length?h('div',{class:'row archive-row',onclick:()=>{archiveOpen=!archiveOpen;renderChats()}},h('div',{class:'av'},'▣'),h('div',{class:'t'},h('b',{},archiveOpen?'Назад к чатам':'Архив'),h('span',{},`${archived.length} чатов`)),h('span',{},archiveOpen?'⌃':'⌄')):null;
   const visible=archiveOpen?archived:active;
-  l.replaceChildren(...(archiveOpen?[]:[favorite,...official.map(chatRow)]),archive,h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
+  const quickToggle=h('button',{type:'button',class:'quick-chats-toggle','aria-expanded':String(quickChatsOpen),'aria-label':quickChatsOpen?'Скрыть быстрый доступ':'Открыть быстрый доступ',onclick:()=>{quickChatsOpen=!quickChatsOpen;renderChats()}},h('span',{},'Быстрый доступ'),h('span',{class:'quick-chats-toggle-action'},quickChatsOpen?'Скрыть ▴':'Открыть ▾'));
+  const back=archiveOpen?h('button',{type:'button',class:'quick-chats-toggle',onclick:()=>{archiveOpen=false;renderChats()}},'← Назад к чатам'):null;
+  l.replaceChildren(...(archiveOpen?[back]:[quickToggle,...(quickChatsOpen?[favorite,...official.map(chatRow),archive].filter(Boolean):[])]),h('div',{class:'chat-list-label'},archiveOpen?'Чаты в архиве':'Ваши чаты'),...(visible.length?sortedChats(visible).map(chatRow):[h('div',{class:'empty'},'Чатов пока нет. Найдите человека по @логину.')]));
 }
 async function loadChats(){
   try{

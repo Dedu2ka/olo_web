@@ -19,6 +19,7 @@ test('архив, поиск сообщений и переключение ак
   await page.getByRole('button', { name: 'Войти' }).click();
   await page.getByText('Борис').click({ button: 'right' });
   await page.getByRole('button', { name: 'В архив' }).click();
+  await page.getByRole('button', { name: 'Открыть быстрый доступ' }).click();
   await expect(page.getByText('Архив')).toBeVisible();
   await page.getByPlaceholder('Сообщения · @логин или ID').fill('Привет');
   await expect(page.getByText('Привет', { exact: true })).toBeVisible();

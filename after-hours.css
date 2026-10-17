@@ -89,6 +89,8 @@ input::placeholder, textarea::placeholder { color: var(--mut); opacity: 1; }
 .row .t span { font-size: 11px; }
 .row .av, .favorite-pinned .av { border: 1px solid var(--line); }
 .favorite-pinned { border: 1px solid var(--line); background: var(--surface2); }
+.quick-chats-toggle { width: 100%; min-height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border: 1px solid var(--line); background: var(--surface2); color: var(--text); text-align: left; font-size: 14px; }
+.quick-chats-toggle-action { color: var(--mut); font-size: 12px; }
 .connection-status { margin-top: 6px; font-size: 11px; }
 .empty { border: 1px dashed var(--line); margin: 14px 0; }
 
