@@ -141,6 +141,8 @@ footer { background: var(--card); border-top: 1px solid var(--line); }
 .profile-attachment-tabs button.active { background: var(--accent); color: var(--accent-text); }
 .profile-media-cell { border: 1px solid var(--line); }
 .group-member-row { border-bottom: 1px solid var(--line); }
+.chat-actions-panel button { display: flex; align-items: center; gap: 14px; }
+.chat-action-icon { display: inline-grid; place-items: center; width: 26px; flex: none; font-size: 20px; }
 .sticker-panel:not([hidden]), .attachment-menu { border-top: 1px solid var(--line); box-shadow: 0 -8px 24px #0004; }
 .record-overlay { background: #08070ac7; }
 .record-overlay.voice .record-panel {
@@ -166,6 +168,7 @@ footer { background: var(--card); border-top: 1px solid var(--line); }
 .record-panel { border: 1px solid var(--line); }
 .record-overlay.circle .record-panel { border: 0; }
 .avatar-overlay, .attachment-overlay { background: #121017; }
+.avatar-overlay img { touch-action: none; transform-origin: center; }
 
 @media (min-width: 720px) {
   .app-header { min-height: 65px; }
@@ -199,7 +202,7 @@ footer { background: var(--card); border-top: 1px solid var(--line); }
   .msgs { padding: 8px 16px; }
   .chat-header { min-height: 98px; flex-direction: column; align-items: stretch; gap: 8px; }
   .chat-header > b { display: block; }
-  .chat-header-person > .back { display: none; }
+  .chat-header-person > .back { display: block; background: transparent; color: var(--accent); }
   .settings-content { align-self: stretch; }
   .message-actions-panel, .chat-actions-panel { width: min(100%, 480px); margin-inline: auto; }
 }
