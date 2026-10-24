@@ -775,7 +775,8 @@ function updateChatJump(){
 }
 function renderMsgs(forceBottom=false){
   const l=$('#msgs');if(!l)return;
-  const near=forceBottom||S.chatStickToBottom!==false;
+  const previousTop=l.scrollTop,previousHeight=l.scrollHeight;
+  const near=forceBottom||S.chatStickToBottom!==false||previousHeight-previousTop-l.clientHeight<80;
   S.msgs.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
   const saved=S.chatId===S.selfChatId?S.favorites.map(message=>({...message,_savedSource:true,timestamp:message.favoriteSavedAt||message.timestamp})):[];
   const timeline=[...S.msgs,...saved].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
@@ -783,6 +784,7 @@ function renderMsgs(forceBottom=false){
   for(const message of timeline){const date=new Date(message.timestamp);const day=Number.isNaN(date.getTime())?'unknown':localDayKey(date);if(day!==previousDay){rows.push(h('div',{class:'message-date'},formatMessageDate(message.timestamp)));previousDay=day}rows.push(message._savedSource?savedMessageEl(message):msgEl(message))}
   const stack=h('div',{class:'message-stack'});stack.replaceChildren(...rows);l.replaceChildren(stack);
   if(near){l.scrollTop=l.scrollHeight;S.chatStickToBottom=true;S.chatSeenIds=new Set(S.msgs.map(m=>m.id))}
+  else l.scrollTop=previousTop;
   S.chatResizeObserver?.disconnect();
   S.chatResizeObserver=new ResizeObserver(()=>{if(S.chatStickToBottom){l.scrollTop=l.scrollHeight;S.chatSeenIds=new Set(S.msgs.map(m=>m.id))}updateChatJump()});
   S.chatResizeObserver.observe(stack);
@@ -946,13 +948,17 @@ function chatView(){
   const record=recordButton(),sendButton=h('button',{type:'button','aria-label':'Отправить',onclick:go},composerIcon('send')),action=h('div',{class:'composer-action'},record);
   updateAction=()=>{const needed=Boolean(inp.value.trim()||pendingFiles.length);action.replaceChildren(needed?sendButton:record)};
   inp.onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey&&!/Mobi|iPhone|Android/.test(navigator.userAgent)){e.preventDefault();go()}};
-  setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list)list.onscroll=()=>{
+  setTimeout(()=>{renderMsgs();const list=$('#msgs');if(list){
+    const userScroll=()=>{S.chatUserScrollUntil=performance.now()+1000};
+    list.addEventListener('wheel',userScroll,{passive:true});
+    list.addEventListener('touchmove',userScroll,{passive:true});
+    list.onscroll=()=>{
     const atBottom=list.scrollHeight-list.scrollTop-list.clientHeight<80;
-    S.chatStickToBottom=atBottom;
+    if(atBottom||performance.now()<(S.chatUserScrollUntil||0))S.chatStickToBottom=atBottom;
     if(atBottom)S.chatSeenIds=new Set(S.msgs.map(m=>m.id));
     updateChatJump();
     if(list.scrollTop<100)loadOlderMessages();
-  };},0);
+  };}},0);
   return h('div',{class:'col'},
     h('header',{class:'chat-header'},h('b',{},'olo'),h('div',{class:'chat-header-person'},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),(()=>{const a=avatar(S.avatar,S.chatType==='SELF'?'★':S.chatType==='GROUP'?'👥':'👤');a.id='chat-partner-avatar';if(S.chatType==='GROUP'){a.title='Информация о группе';a.onclick=viewGroupInfo}else if(S.partnerUserId){a.title='Открыть профиль';a.onclick=()=>viewUserProfile(S.partnerUserId)}return a})(),h('div',{class:'chat-header-title',onclick:()=>S.chatType==='GROUP'?viewGroupInfo():S.partnerUserId&&viewUserProfile(S.partnerUserId)},h('b',{},S.partner),S.chatType==='SELF'?h('div',{class:'presence'},'Личный чат'):S.chatType==='GROUP'?h('div',{class:'presence'},`${S.chatMembers.length} участников`):h('div',{id:'partner-presence',class:'presence'+(S.partnerOnline?' online':'')},presenceLabel(S.partnerOnline,S.partnerLastSeenAt))),S.chatType==='GROUP'?h('button',{type:'button','aria-label':'Настройки группы',onclick:manageGroup},'Настройки'):null)),
     chatMiniPlayer(),h('div',{id:'connection-status',class:'connection-status'}),
