@@ -26,7 +26,7 @@ jobs:
       - name: Prepare static site
         run: |
           mkdir -p dist
-          cp index.html after-hours.css manifest.webmanifest sw.js push.js favicon-32.png icon-180.png icon-192.png icon-512.png icon-maskable-192.png icon-maskable-512.png dist/
+          cp index.html after-hours.css manifest.webmanifest sw.js push.js emoji-test.txt favicon-32.png icon-180.png icon-192.png icon-512.png icon-maskable-192.png icon-maskable-512.png dist/
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload static site

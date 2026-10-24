@@ -73,6 +73,7 @@ input,textarea{width:100%;background:var(--card);border:1px solid var(--line);bo
 .record-preview{width:min(64vw,240px);height:min(64vw,240px);border-radius:50%;object-fit:cover;background:#111}
 .record-timer{color:var(--accent);font-size:20px;font-variant-numeric:tabular-nums}.record-timer::first-letter{animation:recordPulse 1s ease-in-out infinite}.record-actions{display:flex;gap:10px;width:100%}.record-actions button{flex:1}.record-hint{color:var(--mut);font-size:13px;text-align:center}.record-toggle{touch-action:none;user-select:none;-webkit-user-select:none}.record-toggle.recording{background:var(--accent);color:var(--accent-text);transform:scale(1.12);transition:transform .16s ease}.voice-play{display:flex;align-items:center;gap:9px;min-width:min(65vw,260px)}.voice-play button{border-radius:50%;width:38px;height:38px;padding:0;flex:none}.voice-play input[type=range]{min-width:80px;flex:1;padding:0;accent-color:var(--accent)}.voice-play small{color:var(--mut);font-size:11px;white-space:nowrap}.voice-play .voice-speed{width:34px;height:30px;border-radius:8px;background:var(--surface2);color:var(--text);font-size:11px}@keyframes recordPulse{50%{opacity:.3}}
 .composer-wrap{display:flex;flex-direction:column;gap:4px;width:100%;min-width:0}.composer-row{display:flex;align-items:center;gap:8px;min-width:0;width:100%}.composer-row textarea{flex:1;min-width:0;min-height:48px}.composer-action{flex:none;width:48px;height:48px}.composer-action button,.composer-add{display:grid;place-items:center;width:48px;height:48px;padding:0;border-radius:50%}.composer-action svg{display:block}.composer-count{align-self:flex-end;margin-right:56px}.composer-add{font-size:28px;background:transparent;color:var(--text)}
+.composer-emoji{flex:none;width:40px;height:44px;padding:0;border:0;background:transparent;color:var(--text);font-size:27px}.emoji-panel{height:min(350px,45dvh);min-height:230px;display:flex;flex-direction:column;padding:8px;background:var(--card);border-top:1px solid var(--line)}.emoji-panel[hidden]{display:none}.emoji-search{width:100%;min-height:40px;background:var(--surface2);color:var(--text)}.emoji-tabs{display:flex;gap:2px;overflow-x:auto;flex:none;padding:4px 0}.emoji-tabs button{flex:none;width:42px;height:38px;padding:0;border:0;background:transparent;color:var(--text);font-size:22px}.emoji-tabs button.active{background:var(--surface2);border-radius:10px}.emoji-heading{font-size:12px;color:var(--mut);padding:4px}.emoji-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));align-content:start;gap:2px;overflow-y:auto;flex:1}.emoji-grid button{display:grid;place-items:center;min-height:43px;padding:2px;border:0;background:transparent;font-size:28px}.emoji-grid button:active{background:var(--surface2);border-radius:8px}
 .chat-delete-choice{display:flex;align-items:center;gap:12px;min-height:44px;cursor:pointer}.chat-delete-choice input{width:18px;height:18px;accent-color:var(--accent);padding:0;flex:none}.chat-delete-choice span{flex:1}
 </style>
 <style>
@@ -936,12 +937,82 @@ function openAttachmentPicker(onAttach,maxFiles=20,initialStickerPackId=null){
   panel.append(h('div',{class:'olo-picker-header'},h('b',{},'Вложения'),attach,h('button',{type:'button',class:'picker-close','aria-label':'Закрыть вложения',onclick:close},'×')),error,content,h('div',{class:'olo-picker-tabs'},galleryTab,fileTab,stickerTab),mediaInput,fileInput,cameraInput);
   overlay.append(panel);overlay.onclick=e=>{if(e.target===overlay)close()};document.body.append(overlay);window.visualViewport?.addEventListener('resize',fit);window.addEventListener('popstate',close);fit();render();loadOloFiles().then(files=>{if(!overlay.isConnected)return;for(const file of files)items.set(file.name+':'+file.size+':'+file.lastModified,file);if(tab==='files')render()})
 }
+const emojiCategories=[['recent','◷','Недавние'],['Smileys & Emotion','😀','Эмоции'],['People & Body','👋','Люди'],['Animals & Nature','🐻','Животные и природа'],['Food & Drink','🍔','Еда и напитки'],['Travel & Places','🚗','Путешествия'],['Activities','⚽','Занятия'],['Objects','💡','Предметы'],['Symbols','❤️','Символы'],['Flags','🏳️','Флаги']];
+let emojiCatalogPromise;
+function loadEmojiCatalog(){
+  if(!emojiCatalogPromise)emojiCatalogPromise=fetch('./emoji-test.txt').then(r=>{if(!r.ok)throw Error('Не удалось загрузить эмодзи');return r.text()}).then(raw=>{
+    let category='',all=[];
+    for(const line of raw.split('\n')){
+      if(line.startsWith('# group: ')){category=line.slice(9).trim();continue}
+      if(!/;\s*fully-qualified\s*#/.test(line))continue;
+      const match=line.match(/#\s*(\S+)\s+E[\d.]+\s+(.+)$/);
+      if(match)all.push({value:match[1],name:match[2],category});
+    }
+    const values=new Set(all.map(e=>e.value)),variants=new Map(),visible=[];
+    for(const entry of all){
+      const base=entry.value.replace(/[\u{1F3FB}-\u{1F3FF}]/gu,'');
+      if(base!==entry.value&&values.has(base)){if(!variants.has(base))variants.set(base,[]);variants.get(base).push(entry.value)}
+      else visible.push(entry);
+    }
+    return visible.map(e=>({...e,variants:variants.get(e.value)||[]}));
+  }).catch(e=>{emojiCatalogPromise=null;throw e});
+  return emojiCatalogPromise;
+}
+function createEmojiPanel(input){
+  const panel=h('div',{class:'emoji-panel'}),search=h('input',{class:'emoji-search',type:'search',placeholder:'Поиск эмодзи','aria-label':'Поиск эмодзи'}),tabs=h('div',{class:'emoji-tabs'}),heading=h('div',{class:'emoji-heading'}),grid=h('div',{class:'emoji-grid'});
+  let catalog=[],category='recent',recent=[];
+  const recentKey='olo-emoji-recent-'+(S.me?.id||S.user?.id||'local');
+  try{recent=JSON.parse(localStorage.getItem(recentKey)||'[]')}catch{}
+  if(!recent.length)category='Smileys & Emotion';
+  const choose=value=>{
+    const start=input.selectionStart??input.value.length,end=input.selectionEnd??start;
+    input.setRangeText(value,start,end,'end');input.dispatchEvent(new Event('input',{bubbles:true}));
+    recent=[value,...recent.filter(v=>v!==value)].slice(0,40);
+    localStorage.setItem(recentKey,JSON.stringify(recent));
+    render();
+  };
+  const aliases={'😀':'улыбка радость','😂':'смех слезы','❤️':'сердце любовь','👍':'лайк хорошо','🙏':'спасибо','🔥':'огонь'};
+  function render(){
+    tabs.replaceChildren(...emojiCategories.map(([id,icon,title])=>h('button',{type:'button',class:id===category?'active':'',title,'aria-label':title,onclick:()=>{category=id;search.value='';render()}},icon)));
+    const query=search.value.trim().toLowerCase(),map=new Map(catalog.map(e=>[e.value,e]));
+    for(const entry of catalog)for(const variant of entry.variants)map.set(variant,{...entry,value:variant,variants:[]});
+    const entries=query?catalog.filter(e=>e.name.toLowerCase().includes(query)||(aliases[e.value]||'').includes(query)||emojiCategories.find(c=>c[0]===e.category)?.[2].toLowerCase().includes(query)):category==='recent'?recent.map(v=>map.get(v)).filter(Boolean):catalog.filter(e=>e.category===category);
+    heading.textContent=query?'Результаты':emojiCategories.find(c=>c[0]===category)?.[2]||'';
+    grid.replaceChildren();
+    if(!entries.length){grid.append(h('span',{class:'emoji-heading'},catalog.length?'Ничего не найдено':'Загружаем эмодзи…'));return}
+    for(const entry of entries){
+      const button=h('button',{type:'button',title:entry.name,'aria-label':entry.name,onclick:()=>choose(entry.value)},entry.value);
+      if(entry.variants.length){
+        const showVariants=e=>{
+          e.preventDefault();
+          const old=panel.querySelector('.emoji-variants');old?.remove();
+          const menu=h('div',{class:'emoji-variants'},...([entry.value,...entry.variants].map(v=>h('button',{type:'button',onclick:()=>{choose(v);menu.remove()}},v))));
+          menu.style.cssText='position:absolute;z-index:5;display:flex;gap:3px;max-width:92vw;overflow:auto;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 4px 18px #0005';
+          const rect=button.getBoundingClientRect();menu.style.left=Math.max(4,Math.min(rect.left,innerWidth-250))+'px';menu.style.top=Math.max(4,rect.top-58)+'px';
+          document.body.append(menu);setTimeout(()=>document.addEventListener('pointerdown',ev=>{if(!menu.contains(ev.target))menu.remove()},{once:true}),0);
+        };
+        button.oncontextmenu=showVariants;
+        let timer;button.addEventListener('touchstart',()=>{timer=setTimeout(()=>{timer=null;showVariants(new Event('contextmenu'))},500)},{passive:true});button.addEventListener('touchend',()=>clearTimeout(timer));button.addEventListener('touchmove',()=>clearTimeout(timer));
+      }
+      grid.append(button);
+    }
+  }
+  search.oninput=render;
+  panel.append(search,tabs,heading,grid);panel.hidden=true;render();
+  return {panel,open:()=>{panel.hidden=false;loadEmojiCatalog().then(entries=>{catalog=entries;render()}).catch(e=>{heading.textContent=e.message})},close:()=>{panel.hidden=true},isOpen:()=>!panel.hidden};
+}
 function chatView(){
   const inp=h('textarea',{rows:'1',placeholder:'Введите текст',maxlength:'10000'});
   let pendingFiles=[];const pending=h('div',{class:'attachment-pending'});pending.hidden=true;
   let updateAction=()=>{};
   const updatePending=()=>{pending.hidden=!pendingFiles.length;pending.replaceChildren(h('span',{},`${pendingFiles.length} вложений прикреплено`),h('button',{type:'button',onclick:()=>{pendingFiles=[];updatePending()}},'×'));updateAction()};
-  const add=h('button',{type:'button',class:'composer-add','aria-label':'Добавить вложение',onclick:()=>{inp.blur();openAttachmentPicker(files=>{pendingFiles=[...pendingFiles,...files];updatePending()},20-pendingFiles.length)}},'+');
+  const emojiPicker=createEmojiPanel(inp);
+  const emojiButton=h('button',{type:'button',class:'composer-emoji','aria-label':'Эмодзи',onclick:()=>{
+    if(emojiPicker.isOpen()){emojiPicker.close();emojiButton.textContent='☺';inp.focus()}
+    else{inp.blur();emojiPicker.open();emojiButton.textContent='⌨'}
+  }},'☺');
+  inp.addEventListener('focus',()=>{emojiPicker.close();emojiButton.textContent='☺'});
+  const add=h('button',{type:'button',class:'composer-add','aria-label':'Добавить вложение',onclick:()=>{emojiPicker.close();emojiButton.textContent='☺';inp.blur();openAttachmentPicker(files=>{pendingFiles=[...pendingFiles,...files];updatePending()},20-pendingFiles.length)}},'+');
   const count=h('small',{class:'chat-time composer-count'},'0 знаков · 0 сообщений');inp.oninput=()=>{const n=Array.from(inp.value).length;count.textContent=n.toLocaleString('ru-RU')+' знаков · '+(n?Math.ceil(n/1000):0)+' сообщений';updateAction()};
   const reply=S.replyTo?h('div',{class:'reply-preview'},'Ответ: '+S.replyTo.content.slice(0,70)+' ',h('button',{onclick:()=>{S.replyTo=null;show('chat')}},'×')):null;
   const go=()=>{const t=inp.value.trim();if(pendingFiles.length){const files=pendingFiles;pendingFiles=[];pending.hidden=true;sendAttachments(files,t);inp.value='';S.replyTo=null;inp.oninput();return}if(t){inp.value='';send(t,S.replyTo?.id);S.replyTo=null;document.querySelector('.reply-preview')?.remove();inp.oninput()}};
@@ -964,7 +1035,7 @@ function chatView(){
     chatMiniPlayer(),h('div',{id:'connection-status',class:'connection-status'}),
     h('div',{class:'msgs',id:'msgs'}),
     h('button',{id:'chat-jump-bottom',class:'chat-jump-bottom',type:'button',hidden:'',onclick:()=>{const list=$('#msgs');if(!list)return;S.chatStickToBottom=true;S.chatSeenIds=new Set(S.msgs.map(m=>m.id));list.scrollTo({top:list.scrollHeight,behavior:'smooth'});updateChatJump()}},'↓'),
-    h('footer',{},h('div',{class:'composer-wrap'},pending,reply,h('div',{class:'composer-row'},add,inp,action),count)));
+    h('footer',{},h('div',{class:'composer-wrap'},pending,reply,h('div',{class:'composer-row'},add,emojiButton,inp,action),count)),emojiPicker.panel);
 }
 
 /* ---------- WebSocket ---------- */
