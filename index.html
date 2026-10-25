@@ -937,7 +937,7 @@ function openAttachmentPicker(onAttach,maxFiles=20,initialStickerPackId=null){
   panel.append(h('div',{class:'olo-picker-header'},h('b',{},'Вложения'),attach,h('button',{type:'button',class:'picker-close','aria-label':'Закрыть вложения',onclick:close},'×')),error,content,h('div',{class:'olo-picker-tabs'},galleryTab,fileTab,stickerTab),mediaInput,fileInput,cameraInput);
   overlay.append(panel);overlay.onclick=e=>{if(e.target===overlay)close()};document.body.append(overlay);window.visualViewport?.addEventListener('resize',fit);window.addEventListener('popstate',close);fit();render();loadOloFiles().then(files=>{if(!overlay.isConnected)return;for(const file of files)items.set(file.name+':'+file.size+':'+file.lastModified,file);if(tab==='files')render()})
 }
-const emojiCategories=[['all','▦','Все эмодзи'],['recent','◷','Недавние'],['Smileys & Emotion','😀','Эмоции'],['People & Body','👋','Люди'],['Animals & Nature','🐻','Животные и природа'],['Food & Drink','🍔','Еда и напитки'],['Travel & Places','🚗','Путешествия'],['Activities','⚽','Занятия'],['Objects','💡','Предметы'],['Symbols','❤️','Символы'],['Flags','🏳️','Флаги']];
+const emojiCategories=[['all','▦','Все эмодзи'],['recent','◷','Недавние'],['Flags','🇷🇺','Флаги'],['Smileys & Emotion','😀','Эмоции'],['People & Body','👋🏻','Люди'],['Animals & Nature','🐻','Животные и природа'],['Food & Drink','🍔','Еда и напитки'],['Travel & Places','🚗','Путешествия'],['Activities','⚽','Занятия'],['Objects','💡','Предметы'],['Symbols','❤️','Символы']];
 let emojiCatalogPromise;
 function loadEmojiCatalog(){
   if(!emojiCatalogPromise)emojiCatalogPromise=fetch('./emoji-test.txt').then(r=>{if(!r.ok)throw Error('Не удалось загрузить эмодзи');return r.text()}).then(raw=>{
@@ -948,13 +948,20 @@ function loadEmojiCatalog(){
       const match=line.match(/#\s*(\S+)\s+E[\d.]+\s+(.+)$/);
       if(match)all.push({value:match[1],name:match[2],category});
     }
-    const values=new Set(all.map(e=>e.value)),variants=new Map(),visible=[];
+    const variants=new Map(),visible=[],orphan=new Map();
+    const stripTone=value=>value.replace(/[\u{1F3FB}-\u{1F3FF}]/gu,'');
+    const onlyLightTone=value=>{const tones=[...value.matchAll(/[\u{1F3FB}-\u{1F3FF}]/gu)].map(m=>m[0]);return tones.length>0&&tones.every(t=>t==='🏻')};
     for(const entry of all){
-      const base=entry.value.replace(/[\u{1F3FB}-\u{1F3FF}]/gu,'');
-      if(base!==entry.value&&values.has(base)){if(!variants.has(base))variants.set(base,[]);variants.get(base).push(entry.value)}
+      const base=stripTone(entry.value);
+      if(base!==entry.value){if(!variants.has(base))variants.set(base,[]);variants.get(base).push(entry.value);if(!orphan.has(base))orphan.set(base,entry)}
       else visible.push(entry);
     }
-    return visible.map(e=>({...e,variants:variants.get(e.value)||[]}));
+    const bases=new Set(visible.map(e=>e.value));
+    for(const [base,entry] of orphan)if(!bases.has(base))visible.push(entry);
+    const result=visible.map(e=>{const light=(variants.get(stripTone(e.value))||[]).find(onlyLightTone);return light?{...e,value:light}:stripTone(e.value)===e.value?e:null}).filter(Boolean);
+    result.push({value:'🧑🏻‍❤️‍🧑🏻',name:'couple with heart: person, person, light skin tone',category:'People & Body'});
+    result.push({value:'🧑🏻‍❤️‍💋‍🧑🏻',name:'kiss: person, person, light skin tone',category:'People & Body'});
+    return result;
   }).catch(e=>{emojiCatalogPromise=null;throw e});
   return emojiCatalogPromise;
 }
@@ -970,31 +977,19 @@ function createEmojiPanel(input){
     localStorage.setItem(recentKey,JSON.stringify(recent));
     render();
   };
-  const aliases={'😀':'улыбка радость','😂':'смех слезы','❤️':'сердце любовь','👍':'лайк хорошо','🙏':'спасибо','🔥':'огонь'};
+  const aliases={'😀':'улыбка радость','😂':'смех слезы','❤️':'сердце любовь','👍🏻':'лайк хорошо','🙏🏻':'спасибо','🔥':'огонь','🇷🇺':'россия российский флаг'};
   function render(){
     tabs.replaceChildren(...emojiCategories.map(([id,icon,title])=>h('button',{type:'button',class:id===category?'active':'',title,'aria-label':title,onclick:()=>{category=id;search.value='';render()}},icon)));
     const query=search.value.trim().toLowerCase(),map=new Map(catalog.map(e=>[e.value,e]));
-    for(const entry of catalog)for(const variant of entry.variants)map.set(variant,{...entry,value:variant,variants:[]});
     const entries=query?catalog.filter(e=>e.name.toLowerCase().includes(query)||(aliases[e.value]||'').includes(query)||emojiCategories.find(c=>c[0]===e.category)?.[2].toLowerCase().includes(query)):category==='recent'?recent.map(v=>map.get(v)).filter(Boolean):category==='all'?catalog:catalog.filter(e=>e.category===category);
     heading.textContent=query?'Результаты':emojiCategories.find(c=>c[0]===category)?.[2]||'';
-    grid.replaceChildren();
-    if(!entries.length){grid.append(h('span',{class:'emoji-heading'},catalog.length?'Ничего не найдено':'Загружаем эмодзи…'));return}
+    if(!entries.length){grid.replaceChildren(h('span',{class:'emoji-heading'},catalog.length?'Ничего не найдено':'Загружаем эмодзи…'));return}
+    const fragment=document.createDocumentFragment();
     for(const entry of entries){
       const button=h('button',{type:'button',title:entry.name,'aria-label':entry.name,onclick:()=>choose(entry.value)},entry.value);
-      if(entry.variants.length){
-        const showVariants=e=>{
-          e.preventDefault();
-          const old=panel.querySelector('.emoji-variants');old?.remove();
-          const menu=h('div',{class:'emoji-variants'},...([entry.value,...entry.variants].map(v=>h('button',{type:'button',onclick:()=>{choose(v);menu.remove()}},v))));
-          menu.style.cssText='position:absolute;z-index:5;display:flex;gap:3px;max-width:92vw;overflow:auto;padding:7px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:0 4px 18px #0005';
-          const rect=button.getBoundingClientRect();menu.style.left=Math.max(4,Math.min(rect.left,innerWidth-250))+'px';menu.style.top=Math.max(4,rect.top-58)+'px';
-          document.body.append(menu);setTimeout(()=>document.addEventListener('pointerdown',ev=>{if(!menu.contains(ev.target))menu.remove()},{once:true}),0);
-        };
-        button.oncontextmenu=showVariants;
-        let timer;button.addEventListener('touchstart',()=>{timer=setTimeout(()=>{timer=null;showVariants(new Event('contextmenu'))},500)},{passive:true});button.addEventListener('touchend',()=>clearTimeout(timer));button.addEventListener('touchmove',()=>clearTimeout(timer));
-      }
-      grid.append(button);
+      fragment.append(button);
     }
+    grid.replaceChildren(fragment);
   }
   search.oninput=render;
   panel.append(search,tabs,heading,grid);panel.hidden=true;render();
