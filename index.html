@@ -937,7 +937,7 @@ function openAttachmentPicker(onAttach,maxFiles=20,initialStickerPackId=null){
   panel.append(h('div',{class:'olo-picker-header'},h('b',{},'Вложения'),attach,h('button',{type:'button',class:'picker-close','aria-label':'Закрыть вложения',onclick:close},'×')),error,content,h('div',{class:'olo-picker-tabs'},galleryTab,fileTab,stickerTab),mediaInput,fileInput,cameraInput);
   overlay.append(panel);overlay.onclick=e=>{if(e.target===overlay)close()};document.body.append(overlay);window.visualViewport?.addEventListener('resize',fit);window.addEventListener('popstate',close);fit();render();loadOloFiles().then(files=>{if(!overlay.isConnected)return;for(const file of files)items.set(file.name+':'+file.size+':'+file.lastModified,file);if(tab==='files')render()})
 }
-const emojiCategories=[['all','▦','Все эмодзи'],['recent','◷','Недавние'],['Flags','🇷🇺','Флаги'],['Smileys & Emotion','😀','Эмоции'],['People & Body','👋🏻','Люди'],['Animals & Nature','🐻','Животные и природа'],['Food & Drink','🍔','Еда и напитки'],['Travel & Places','🚗','Путешествия'],['Activities','⚽','Занятия'],['Objects','💡','Предметы'],['Symbols','❤️','Символы']];
+const emojiCategories=[['all','▦','Все эмодзи'],['recent','◷','Недавние'],['Smileys & Emotion','😀','Эмоции'],['People & Body','👋🏻','Люди'],['Animals & Nature','🐻','Животные и природа'],['Food & Drink','🍔','Еда и напитки'],['Travel & Places','🚗','Путешествия'],['Activities','⚽','Занятия'],['Objects','💡','Предметы'],['Symbols','❤️','Символы'],['Flags','🏳️','Флаги']];
 let emojiCatalogPromise;
 function loadEmojiCatalog(){
   if(!emojiCatalogPromise)emojiCatalogPromise=fetch('./emoji-test.txt').then(r=>{if(!r.ok)throw Error('Не удалось загрузить эмодзи');return r.text()}).then(raw=>{
