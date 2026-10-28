@@ -613,6 +613,7 @@ function pinnedPreview(pin){
   if(pin.content?.trim())return pin.content.trim();
   if(pin.poll)return 'Опрос: '+pin.poll.question;
   const attachment=pin.attachments?.[0],type=pin.attachmentContentType||attachment?.contentType||'',name=pin.attachmentName||attachment?.fileName||'';
+  if(isStickerAttachment({attachmentName:name,attachmentContentType:type}))return 'Стикер';
   if(type.startsWith('image/'))return 'Фото';
   if(type.startsWith('video/'))return 'Видео';
   if(type.startsWith('audio/'))return 'Аудио';
