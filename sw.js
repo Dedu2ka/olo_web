@@ -1,5 +1,5 @@
-const CACHE_NAME = 'olo-shell-v10';
-const SHELL = ['./', './index.html', './after-hours.css', './push.js', './emoji-test.txt', './manifest.webmanifest', './favicon-32.png', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-192.png', './icon-maskable-512.png'];
+const CACHE_NAME = 'olo-shell-v11';
+const SHELL = ['./', './index.html', './after-hours.css', './push.js', './emoji-catalog.json', './manifest.webmanifest', './favicon-32.png', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-192.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
