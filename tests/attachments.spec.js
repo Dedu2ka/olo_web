@@ -6,6 +6,52 @@ const BOB = '22222222-2222-4222-8222-222222222222';
 const CLARA = '33333333-3333-4333-8333-333333333333';
 const CHAT = '44444444-4444-4444-8444-444444444444';
 const VERSION = '55555555-5555-4555-8555-555555555555';
+
+test('пустые вложения скрыты, настройки прокручиваются целиком', async ({ page }) => {
+  await messenger(page); await openGroup(page);
+  await expect(page.locator('.attachment-pending')).toBeHidden();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight)).toBe(true);
+  await page.getByRole('button', { name: 'Настройки группы', exact: true }).click();
+  await expect(page.locator('.group-settings-card')).toBeVisible();
+  await expect(page.locator('.group-member-list')).toHaveCSS('overflow-y', 'visible');
+  await expect(page.locator('.group-settings-card')).toHaveCSS('overflow-y', 'auto');
+});
+
+test('медиа остаётся в локальном кэше после перезагрузки', async ({ page }) => {
+  await messenger(page); await openGroup(page);
+  let downloads=0;
+  await page.route('**/api/v1/cache-probe', route => {downloads++;return route.fulfill({contentType:'image/png',body:png})});
+  await page.evaluate(() => attachmentBlobUrl({id:'probe',attachmentUrl:'/api/v1/cache-probe'}));
+  await page.reload();
+  await expect(page.getByText('Команда', {exact:true})).toBeVisible();
+  await page.evaluate(() => attachmentBlobUrl({id:'probe',attachmentUrl:'/api/v1/cache-probe'}));
+  expect(downloads).toBe(1);
+});
+
+test('кружок записывается и отправляется как видеосообщение', async ({ page }) => {
+  const state=await messenger(page);await openGroup(page);
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=canvas.height=480;
+    const context=canvas.getContext('2d');context.fillStyle='#795da4';context.fillRect(0,0,480,480);
+    const stream=canvas.captureStream(30),audio=new AudioContext(),oscillator=audio.createOscillator(),destination=audio.createMediaStreamDestination();
+    oscillator.connect(destination);oscillator.start();destination.stream.getAudioTracks().forEach(track=>stream.addTrack(track));
+    navigator.mediaDevices.getUserMedia=async()=>stream;
+    const recording=await recordChatMedia('circle');if(!recording)throw Error('Recording failed');
+    await new Promise(resolve=>setTimeout(resolve,800));recording.stop(true);
+  });
+  await expect.poll(()=>state.uploads.length).toBe(1);
+  expect(state.uploads[0].body).toContain('olo-circle-');
+  await expect(page.locator('.record-overlay')).toHaveCount(0);
+});
+
+test('новое сообщение появляется без перезагрузки при восстановлении связи', async ({ page }) => {
+  await messenger(page);await openGroup(page);
+  await page.route(`**/chats/${CHAT}/messages?*`,route=>route.fulfill({json:[{id:'incoming',chatId:CHAT,senderId:CLARA,content:'Сообщение после обрыва',timestamp:new Date().toISOString(),status:'SENT'}]}));
+  await page.evaluate(()=>syncVisibleChat());
+  await expect(page.getByText('Сообщение после обрыва',{exact:true})).toBeVisible();
+  await page.reload();await openGroup(page);
+  await expect(page.getByText('Сообщение после обрыва',{exact:true})).toBeVisible();
+});
 const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
 const avatar = id => `/api/v1/users/${id}/avatar?v=${VERSION}`;
 

@@ -1,4 +1,19 @@
 /* Olo / After Hours — shared visual direction for mobile and wide web layouts. */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+[hidden] { display: none !important; }
+#app { height: 100dvh; overflow: hidden; min-height: 0; }
+#app > .col, .msgs { min-height: 0; }
+.msgs { overscroll-behavior: contain; overflow-anchor: none; }
+.profile-overlay { overflow: hidden; }
+.profile-overlay > .profile-card { max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; justify-content: flex-start; }
+.profile-card > * { flex-shrink: 0; }
+.profile-card .group-member-list, .profile-card .profile-attachment-items { max-height: none; overflow: visible; }
+.profile-card .group-member-row { min-width: 0; width: 100%; }
+.profile-card .profile-avatar { flex: 0 0 112px; width: 112px; height: 112px; object-fit: cover; }
+.attachment-overlay { z-index: 1400; }
+.avatar-overlay { z-index: 1500; }
+.olo-picker-overlay, .group-member-picker-overlay { z-index: 1300; }
+.scheduled-row { text-align: left; }
 :root {
   color-scheme: dark;
   --bg: #1d1b23;

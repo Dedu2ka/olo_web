@@ -409,12 +409,12 @@ function attachmentBrowser(chatId){
           items.replaceChildren(...(links.length?links.map(link=>hold(h('a',{class:'chat-choice',href:link.url,target:'_blank',rel:'noopener noreferrer'},link.url),link.messageId)):[h('div',{class:'empty'},'Ссылок пока нет')]));
           return;
         }
-        const matches=files.filter(predicate);
+        const matches=files.filter(predicate).sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp)));
         items.classList.toggle('media-grid',label==='Медиа');
         if(label==='Медиа'){
           items.replaceChildren(...(matches.length?matches.map(f=>{
             const cell=hold(h('button',{type:'button',class:'profile-media-cell',title:'Открыть',onclick:()=>{
-              const previous=S.chatId;S.chatId=chatId;openAttachment(f).finally(()=>{S.chatId=previous})
+              openAttachment({...f,chatId})
             }},'▧'),f.id);
             attachmentBlobUrl(f).then(url=>{if(cell.isConnected)cell.replaceChildren(f.attachmentContentType?.startsWith('video/')?h('video',{src:url,muted:'',playsinline:'',preload:'metadata'}):h('img',{src:url,alt:'Фото',loading:'lazy'}))}).catch(()=>{});
             return cell;
@@ -539,7 +539,7 @@ function profileView(){
   const logoutButton=h('button',{class:'logout-button',onclick:()=>confirm('Вы действительно хотите выйти из аккаунта?')&&logout()},'Выйти из аккаунта');
   save.onclick=async()=>{err.textContent='';save.disabled=true;try{let r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId),{method:'PUT',body:JSON.stringify({displayName:name.value.trim()||null})});if(!r.ok)throw new Error('Не удалось сохранить имя ('+r.status+')');let u=await r.json();if(avatarRemoved){r=await api('/api/v1/users/me/avatar',{method:'DELETE'});if(!r.ok)throw new Error('Не удалось удалить аватар ('+r.status+')');u=await r.json()}else if(avatarFile){const form=new FormData();form.append('file',avatarFile,avatarFile.name);r=await api('/api/v1/users/me/avatar',{method:'PUT',body:form});if(!r.ok)throw new Error('Не удалось загрузить аватар ('+r.status+')');u=await r.json()}S.avatar=u.avatarUrl||'';S.displayName=u.displayName||'';saveSession();await loadChats();if(previewUrl)URL.revokeObjectURL(previewUrl);history.back()}catch(e){err.textContent=e.message||'Не удалось сохранить профиль'}finally{save.disabled=false}};
   setTimeout(async()=>{try{const r=await api('/api/v1/users/me?userId='+encodeURIComponent(S.userId));if(r.ok){const u=await r.json();name.value=u.displayName||'';avatarUrl=u.avatarUrl||null;S.avatar=avatarUrl||'';preview.replaceChildren(avatar(avatarUrl))}else{err.textContent='Не удалось загрузить профиль (HTTP '+r.status+')'}}catch{err.textContent='Не удалось связаться с сервером при загрузке профиля'}},0);
-  return h('div',{class:'col'},h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'settings-content'},h('div',{class:'settings-brand'},'olo'),h('h1',{class:'settings-title'},'Настройки'),h('div',{class:'settings-card settings-avatar-card'},h('div',{class:'avatar-actions'},h('b',{},'Фото профиля'),choose,clear),preview),h('div',{class:'settings-card settings-name-card'},h('label',{},'ОТОБРАЖАЕМОЕ ИМЯ'),name,h('small',{},'Это имя видно в чатах. Никнейм для входа не изменится.')),file,err,save,recoveryCard,themeSetting,accounts,donate,h('div',{id:'settings-actions',class:'settings-actions'}),logoutButton),bottomBar('settings'));
+  return h('div',{class:'col'},h('div',{id:'connection-status',class:'connection-status'}),h('div',{class:'settings-content'},h('div',{class:'settings-brand'},'olo'),h('h1',{class:'settings-title'},'Настройки'),h('div',{class:'settings-card settings-avatar-card'},h('div',{class:'avatar-actions'},h('b',{},'Фото профиля'),choose,clear),preview),h('div',{class:'settings-card settings-name-card'},h('label',{},'ОТОБРАЖАЕМОЕ ИМЯ'),name,h('small',{},'Это имя видно в чатах. Никнейм для входа не изменится.')),file,err,save,recoveryCard,themeSetting,h('button',{type:'button',class:'donate-row',onclick:clearLocalCache},'Очистить кэш'),accounts,donate,h('div',{id:'settings-actions',class:'settings-actions'}),logoutButton),bottomBar('settings'));
 }
 function openChat(c){Object.assign(S,{selectedMessageId:null,chatId:c.id,peerId:null,partner:c.name||c.partnerName||'Чат',avatar:c.type==='GROUP'?c.avatarUrl:c.partnerAvatarUrl,partnerUserId:c.partnerUserId,partnerOnline:c.partnerOnline||false,partnerLastSeenAt:c.partnerLastSeenAt,chatType:c.type,chatMembers:c.members||[],msgs:[],pins:[],scheduled:[],hasOlder:false,loadingOlder:false,replyTo:null,chatStickToBottom:true,chatSeenIds:new Set()});navigate('chat');if(c.type!=='GROUP'&&c.partnerUserId)refreshChatPartnerAvatar(c.id,c.partnerUserId);loadPins();loadScheduled();return loadMsgs()}
 async function refreshChatPartnerAvatar(chatId,userId){
@@ -674,10 +674,17 @@ function showDeleteConfirmation(message){
   dialog.append(question);if(checkbox)dialog.append(checkbox);dialog.append(error,cancel,confirmButton);overlay.append(dialog);document.body.append(overlay)
 }
 const attachmentObjectUrls=new Map();
+const attachmentRequests=new Map();
 async function attachmentBlobUrl(message){
-  const key=message.id+':'+message.attachmentUrl;if(attachmentObjectUrls.has(key))return attachmentObjectUrls.get(key);
-  const r=await api(message.attachmentUrl);if(!r.ok)throw Error('HTTP '+r.status);
-  const url=URL.createObjectURL(await r.blob());attachmentObjectUrls.set(key,url);return url
+  const userId=S.userId,key=userId+':'+message.attachmentUrl;if(attachmentObjectUrls.has(key))return attachmentObjectUrls.get(key);
+  if(attachmentRequests.has(key))return attachmentRequests.get(key);
+  const request=(async()=>{
+    const cache=await caches.open('olo-media-'+userId).catch(()=>null),cacheKey=new Request(new URL('/__olo_media__/'+encodeURIComponent(message.attachmentUrl),location.origin));
+    let response=await cache?.match(cacheKey);
+    if(!response){response=await api(message.attachmentUrl);if(!response.ok)throw Error('HTTP '+response.status);if(cache)await cache.put(cacheKey,response.clone()).catch(()=>{})}
+    const blob=await response.blob();if(S.userId!==userId)throw Error('Session changed');
+    const url=URL.createObjectURL(blob);attachmentObjectUrls.set(key,url);return url;
+  })().finally(()=>attachmentRequests.delete(key));attachmentRequests.set(key,request);return request;
 }
 function isStickerAttachment(message){const name=message.attachmentName||message.fileName||'';return (message.attachmentContentType||message.contentType||'').startsWith('image/')&&(name.startsWith('olo-sticker-')||/^(?:yevalohusha|sotryasenieochka|oldanimation)-\d+\.webp$/i.test(name))}
 function stickerPackForMessage(message){const name=message.attachmentName||message.fileName||'';const id=/^olo-sticker-([0-9a-f-]{36})\.[a-z0-9]+$/i.exec(name)?.[1];return S.stickerPacks.find(pack=>(pack.stickers||[]).some(sticker=>sticker.id===id||sticker.fileName?.toLowerCase()===name.toLowerCase()))}
@@ -751,7 +758,7 @@ function singleAttachmentEl(message){
 }
 function formatBytes(size){if(!Number.isFinite(Number(size)))return 'Файл';const n=Number(size);return n>=1048576?(n/1048576).toFixed(1)+' МБ':n>=1024?Math.round(n/1024)+' КБ':n+' Б'}
 async function openAttachment(message){
-  let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||'')&&!isStickerAttachment(m)&&!(m.attachmentName||'').startsWith('olo-circle-'));if(S.chatId){try{const r=await api(`/api/v1/chats/${S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')&&!isStickerAttachment(a)&&!(a.fileName||'').startsWith('olo-circle-')).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0,startY=0,offsetX=0,offsetY=0,pinchDistance=0,pinchScale=1,wasPinch=false;const pointers=new Map();
+  let all=S.msgs.flatMap(messageAttachments).filter(m=>/^(image|video)\//.test(m.attachmentContentType||'')&&!isStickerAttachment(m)&&!(m.attachmentName||'').startsWith('olo-circle-'));if(message.chatId||S.chatId){try{const r=await api(`/api/v1/chats/${message.chatId||S.chatId}/media`);if(r.ok){const groups=await r.json();const full=groups.flatMap(g=>(g.attachments||[]).filter(a=>/^(image|video)\//.test(a.contentType||'')&&!isStickerAttachment(a)&&!(a.fileName||'').startsWith('olo-circle-')).map(a=>({...message,id:g.messageId,chatId:g.chatId,senderId:g.senderId,timestamp:g.timestamp,attachmentName:a.fileName,attachmentContentType:a.contentType,attachmentSizeBytes:a.sizeBytes,attachmentUrl:a.url})));if(full.length)all=full}}catch{}}let index=Math.max(0,all.findIndex(m=>m.attachmentUrl===message.attachmentUrl));if(!all.length)all=[message];let scale=1,startX=0,startY=0,offsetX=0,offsetY=0,pinchDistance=0,pinchScale=1,wasPinch=false;const pointers=new Map();
   const close=()=>{document.removeEventListener('keydown',viewerKeys);overlay.remove()},mediaBox=h('div',{class:'attachment-media'}),counter=h('small',{}),prev=h('button',{class:'attachment-nav',onclick:()=>show(index-1)},'‹'),next=h('button',{class:'attachment-nav',onclick:()=>show(index+1)},'›');
   const panel=h('div',{class:'attachment-viewer'},h('div',{class:'attachment-viewer-top'},counter,h('button',{class:'viewer-icon',title:'Скачать','aria-label':'Скачать',onclick:()=>downloadAttachment(all[index])},'↓'),h('button',{class:'attachment-close',title:'Закрыть','aria-label':'Закрыть',onclick:close},'×')),h('div',{class:'attachment-media-row'},prev,mediaBox,next));
   const zoom=h('div',{class:'viewer-zoom'});panel.append(zoom);
@@ -774,10 +781,11 @@ async function loadOloFiles(){
 }
 async function downloadAttachment(message){try{const url=await attachmentBlobUrl(message),a=h('a',{href:url,download:message.attachmentName||'file'});document.body.append(a);a.click();a.remove();saveOloFile(message,url)}catch(e){alert('Не удалось скачать файл: '+e.message)}}
 async function sendAttachments(files,caption=''){
+  const originChatId=S.chatId,originPeerId=S.peerId;
   if(!files?.length)return;if(files.some(file=>file.size>50*1024*1024)||files.reduce((sum,file)=>sum+file.size,0)>100*1024*1024){alert('Ограничение: до 50 МБ на файл и до 100 МБ на сообщение');return}
   const localId='upload-'+crypto.randomUUID(),localUrls=files.map(file=>isPhotoVideoFile(file)?URL.createObjectURL(file):null),pending={id:localId,chatId:S.chatId,senderId:S.userId,content:caption,status:'PENDING',timestamp:new Date().toISOString(),localFiles:files,localUrls};S.msgs.push(pending);renderMsgs(true);
   const body=new FormData();for(const file of files)body.append('files',file,file.name||'file');
-  try{const base=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,path=caption.trim()?`${base}?content=${encodeURIComponent(caption.trim())}`:base,r=await api(path,{method:'POST',body});if(!r.ok){const detail=(await r.text()).slice(0,2000);throw Error(`HTTP ${r.status} (${base})${detail?': '+detail:''}`)}const m=await r.json();S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);localUrls.filter(Boolean).forEach(url=>URL.revokeObjectURL(url));if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',uploadError:e.message}:x);renderMsgs(true)}
+  try{const base=S.chatId?`/api/v1/chats/${S.chatId}/attachments/batch`:`/api/v1/chats/direct/${S.peerId}/attachments/batch`,path=caption.trim()?`${base}?content=${encodeURIComponent(caption.trim())}`:base,r=await api(path,{method:'POST',body});if(!r.ok){const detail=(await r.text()).slice(0,2000);throw Error(`HTTP ${r.status} (${base})${detail?': '+detail:''}`)}const m=await r.json();if(S.chatId!==originChatId||S.peerId!==originPeerId){localUrls.filter(Boolean).forEach(url=>URL.revokeObjectURL(url));loadChats();return}S.chatId=m.chatId;S.peerId=null;S.msgs=S.msgs.filter(x=>x.id!==localId);localUrls.filter(Boolean).forEach(url=>URL.revokeObjectURL(url));if(!S.msgs.some(x=>x.id===m.id))S.msgs.push(m);renderMsgs(true);loadChats()}catch(e){S.msgs=S.msgs.map(x=>x.id===localId?{...x,status:'FAILED',uploadError:e.message}:x);renderMsgs(true)}
 }
 async function showVoiceTrim(blob){
   let buffer;try{const context=new AudioContext();try{buffer=await context.decodeAudioData(await blob.arrayBuffer())}finally{await context.close()}}catch{showToast('Не удалось открыть запись для обрезки');return}
@@ -793,7 +801,7 @@ async function recordChatMedia(kind,onFinish=()=>{},onLock=()=>{}){
   if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){alert('Запись недоступна в этом браузере');return null}
   const originChatId=S.chatId,originPeerId=S.peerId;
   let stream;try{stream=await navigator.mediaDevices.getUserMedia(kind==='circle'?{audio:true,video:{facingMode:'user'}}:{audio:true})}catch{alert('Разрешите доступ к '+(kind==='circle'?'камере и микрофону':'микрофону'));return null}
-  const types=kind==='circle'?['video/mp4','video/webm;codecs=vp8,opus','video/webm']:['audio/mp4','audio/webm;codecs=opus','audio/webm'];
+  const types=kind==='circle'?['video/webm;codecs=vp8,opus','video/webm','video/mp4']:['audio/webm;codecs=opus','audio/webm','audio/mp4'];
   const mime=types.find(type=>!MediaRecorder.isTypeSupported||MediaRecorder.isTypeSupported(type));let recorder,recordStream=stream,cameraStream=stream,canvasFrame=0,facing='user';
   const chunks=[],overlay=h('div',{class:'record-overlay '+kind}),panel=h('div',{class:'record-panel'}),timer=h('div',{class:'record-timer'},'● 00:00');
   const preview=kind==='circle'?h('video',{class:'record-preview',autoplay:'',muted:'',playsinline:''}):h('div',{class:'record-preview',style:'display:grid;place-items:center;font-size:64px'},'🎙');
@@ -809,7 +817,7 @@ async function recordChatMedia(kind,onFinish=()=>{},onLock=()=>{}){
   let cancelled=false,elapsed=0,interval;
   const hint=h('div',{class:'record-hint'},'← отмена · ↑ закрепить'),actions=h('div',{class:'record-actions',style:'display:none'});
   let trimRequested=false;
-  const stop=(send,trim=false)=>{if(recorder.state==='inactive')return;cancelled=!send&&!trim;trimRequested=trim;recorder.stop()};
+  const stop=(send,trim=false)=>{if(recorder.state==='inactive')return;cancelled=!send&&!trim;trimRequested=trim;recorder.requestData();recorder.stop()};
   const lock=()=>{hint.textContent='Запись закреплена';actions.style.display='flex';onLock();navigator.vibrate?.(12)};
   actions.append(h('button',{type:'button',onclick:()=>stop(false)},'Удалить'));
   if(kind==='voice')actions.append(h('button',{type:'button',onclick:()=>stop(false,true)},'Обрезать'));
@@ -897,6 +905,7 @@ function renderMsgs(forceBottom=false){
   S.chatResizeObserver=new ResizeObserver(()=>{if(S.chatStickToBottom){l.scrollTop=l.scrollHeight;S.chatSeenIds=new Set(S.msgs.map(m=>m.id))}updateChatJump()});
   S.chatResizeObserver.observe(stack);
   updateChatJump();
+  saveChatMessages();
 }
 function savedMessageEl(message){
   const source=S.chats.find(chat=>chat.id===message.chatId);
@@ -914,15 +923,33 @@ function markRead(){
   S.msgs.forEach(m=>{if(m.senderId!==S.userId)m.status='READ'});
   api(`/api/v1/chats/${S.chatId}/read`,{method:'POST'}).then(loadChats).catch(()=>{});
 }
+async function clearLocalCache(){
+  try{
+    await caches.delete('olo-media-'+S.userId);
+    for(const url of attachmentObjectUrls.values())URL.revokeObjectURL(url);attachmentObjectUrls.clear();
+    const db=await chatCacheDatabase();await new Promise((resolve,reject)=>{const tx=db.transaction('chats','readwrite'),store=tx.objectStore('chats'),request=store.openCursor();request.onsuccess=()=>{const cursor=request.result;if(cursor){if(String(cursor.key).startsWith(S.userId+':'))cursor.delete();cursor.continue()}};tx.oncomplete=resolve;tx.onerror=reject});db.close();showToast('Кэш очищен');
+  }catch{showToast('Не удалось очистить кэш')}
+}
+function chatCacheDatabase(){return new Promise((resolve,reject)=>{const request=indexedDB.open('olo-chat-history',1);request.onupgradeneeded=()=>request.result.createObjectStore('chats');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)})}
+async function restoreChatMessages(chatId,userId){
+  try{const db=await chatCacheDatabase();const messages=await new Promise((resolve,reject)=>{const request=db.transaction('chats').objectStore('chats').get(userId+':'+chatId);request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error)});db.close();if(S.chatId===chatId&&S.userId===userId&&!S.msgs.length&&messages?.length){S.msgs=messages;renderMsgs()}}catch{}
+}
+async function saveChatMessages(){
+  const chatId=S.chatId,userId=S.userId,messages=S.msgs.filter(message=>!['PENDING','FAILED'].includes(message.status));if(!chatId||!messages.length)return;
+  try{const db=await chatCacheDatabase();const tx=db.transaction('chats','readwrite');tx.objectStore('chats').put(messages,userId+':'+chatId);tx.oncomplete=()=>db.close();tx.onerror=()=>db.close()}catch{}
+}
 async function loadMsgs(){
   if(!S.chatId)return;
+  const chatId=S.chatId;
+  restoreChatMessages(chatId,S.userId);
   loadPins();loadScheduled();
   try{
-    const r=await api(`/api/v1/chats/${S.chatId}/messages?limit=50`);if(!r.ok)return;
-    const list=await r.json();S.hasOlder=list.length===50;
+    const r=await api(`/api/v1/chats/${chatId}/messages?limit=50`);if(!r.ok)return;
+    const list=await r.json();if(S.chatId!==chatId)return;S.hasOlder=list.length===50;
     const pend=S.msgs.filter(m=>m.status==='PENDING'||m.status==='FAILED');
     S.msgs=[...new Map([...S.msgs,...list,...pend].map(m=>[m.id,m])).values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
-    renderMsgs(true);markRead();
+    renderMsgs();markRead();
+    saveChatMessages();
   }catch{}
 }
 async function loadOlderMessages(){
@@ -1126,7 +1153,7 @@ function chatView(){
     if(list.scrollTop<100)loadOlderMessages();
   };}},0);
   return h('div',{class:'col'},
-    h('header',{class:'chat-header'},h('b',{},'olo'),h('div',{class:'chat-header-person'},h('button',{class:'back','aria-label':'Назад',onclick:()=>history.back()},'‹'),(()=>{const a=avatar(S.avatar,S.chatType==='SELF'?'★':S.chatType==='GROUP'?'👥':'👤');a.id='chat-partner-avatar';if(S.chatType==='GROUP'){a.title='Информация о группе';a.onclick=viewGroupInfo}else if(S.partnerUserId){a.title='Открыть профиль';a.onclick=()=>viewUserProfile(S.partnerUserId)}return a})(),h('div',{class:'chat-header-title',onclick:()=>S.chatType==='GROUP'?viewGroupInfo():S.partnerUserId&&viewUserProfile(S.partnerUserId)},h('b',{},S.partner),S.chatType==='SELF'?h('div',{class:'presence'},'Личный чат'):S.chatType==='GROUP'?h('div',{class:'presence'},`${S.chatMembers.length} участников`):h('div',{id:'partner-presence',class:'presence'+(S.partnerOnline?' online':'')},presenceLabel(S.partnerOnline,S.partnerLastSeenAt))),h('button',{id:'scheduled-count',class:'scheduled-count',type:'button',title:'Запланированные сообщения',onclick:showScheduledList},'⏰'),S.chatType==='GROUP'?h('button',{type:'button','aria-label':'Настройки группы',onclick:manageGroup},'Настройки'):null)),
+    h('header',{class:'chat-header'},h('b',{},'olo'),h('div',{class:'chat-header-person'},h('button',{class:'back','aria-label':'Назад',onclick:()=>navigate('list')},'‹'),(()=>{const a=avatar(S.avatar,S.chatType==='SELF'?'★':S.chatType==='GROUP'?'👥':'👤');a.id='chat-partner-avatar';if(S.chatType==='GROUP'){a.title='Информация о группе';a.onclick=viewGroupInfo}else if(S.partnerUserId){a.title='Открыть профиль';a.onclick=()=>viewUserProfile(S.partnerUserId)}return a})(),h('div',{class:'chat-header-title',onclick:()=>S.chatType==='GROUP'?viewGroupInfo():S.partnerUserId&&viewUserProfile(S.partnerUserId)},h('b',{},S.partner),S.chatType==='SELF'?h('div',{class:'presence'},'Личный чат'):S.chatType==='GROUP'?h('div',{class:'presence'},`${S.chatMembers.length} участников`):h('div',{id:'partner-presence',class:'presence'+(S.partnerOnline?' online':'')},presenceLabel(S.partnerOnline,S.partnerLastSeenAt))),h('button',{id:'scheduled-count',class:'scheduled-count',type:'button',title:'Запланированные сообщения',onclick:showScheduledList},'⏰'),S.chatType==='GROUP'?h('button',{type:'button','aria-label':'Настройки группы',onclick:manageGroup},'Настройки'):null)),
     h('button',{id:'chat-pinned',class:'chat-pinned',type:'button',hidden:'',onclick:()=>S.pins?.length>1?showPinnedList():S.pins?.[0]&&jumpToMessage(S.pins[0].id)}),
     chatMiniPlayer(),h('div',{id:'connection-status',class:'connection-status'}),
     h('div',{class:'msgs',id:'msgs'}),
@@ -1151,6 +1178,23 @@ async function connectWS(){
   }catch{if(id===wsGen){S.connectionStatus='ERROR';updateConnectionStatus();retry()}}
 }
 function retry(){S.connectionStatus='RECONNECTING';S.connectionStatusVisible=true;updateConnectionStatus();setTimeout(connectWS,Math.min(30000,1000*2**S.retry++))}
+let syncInFlight=false;
+async function syncVisibleChat(){
+  if(syncInFlight||!S.token||document.hidden)return;syncInFlight=true;
+  const chatId=S.chatId;
+  try{
+    await loadChats();
+    if(view!=='chat'||!chatId||S.chatId!==chatId)return;
+    const response=await api(`/api/v1/chats/${chatId}/messages?limit=50`);if(!response.ok)return;
+    const list=await response.json();if(view!=='chat'||S.chatId!==chatId)return;
+    const before=JSON.stringify(S.msgs);
+    S.msgs=[...new Map([...S.msgs,...list].map(message=>[message.id,message])).values()].sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
+    if(JSON.stringify(S.msgs)!==before){renderMsgs();markRead()}
+  }catch{}finally{syncInFlight=false}
+}
+setInterval(()=>{if(S.connectionStatus!=='CONNECTED')syncVisibleChat()},4000);
+window.addEventListener('online',()=>{if(S.token){connectWS();syncVisibleChat()}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&S.token){if(S.ws?.readyState!==WebSocket.OPEN)connectWS();syncVisibleChat()}});
 function updateConnectionStatus(){
   const el=$('#connection-status');if(!el)return;
   const states={CONNECTING:['Подключаемся к серверу…','reconnecting'],CONNECTED:['Подключено','connected'],RECONNECTING:['Связь прервалась, переподключаемся…','reconnecting'],ERROR:['Ошибка соединения','error'],DISCONNECTED:['Нет соединения','error']};
