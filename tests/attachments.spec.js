@@ -7,6 +7,72 @@ const CLARA = '33333333-3333-4333-8333-333333333333';
 const CHAT = '44444444-4444-4444-8444-444444444444';
 const VERSION = '55555555-5555-4555-8555-555555555555';
 
+test('новая группа поддерживает множественный выбор как Android',async({page})=>{
+  await messenger(page);
+  const users=[{id:'u1',username:'first',displayName:'Первый'},{id:'u2',username:'second',displayName:'Второй'}];let created=null;
+  await page.route('**/users/search?*',route=>route.fulfill({json:users}));
+  await page.route('**/chats/groups',route=>{created=route.request().postDataJSON();return route.fulfill({status:500,json:{}})});
+  await page.getByRole('button',{name:'Создать группу',exact:true}).click();
+  await page.getByPlaceholder('Название группы',{exact:true}).fill('Новая');
+  await page.getByPlaceholder('Имя или логин',{exact:true}).fill('п');
+  await page.getByRole('button',{name:/Первый/}).click();
+  await page.getByRole('button',{name:/Второй/}).click();
+  await page.getByRole('button',{name:'Создать группу (2)',exact:true}).click();
+  await expect.poll(()=>created?.memberUserIds.length).toBe(2);
+  expect(created.memberUserIds).toEqual(['u1','u2']);
+});
+
+for (const theme of ['light','dark']) test(`отложенная отправка повторяет Android: выбор даты, времени, подтверждение (${theme})`, async ({page},testInfo)=>{
+  await messenger(page);await openGroup(page);await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+  let scheduled=null;
+  await page.route(`**/chats/${CHAT}/scheduled`,route=>{if(route.request().method()==='POST'){scheduled=route.request().postDataJSON();return route.fulfill({json:{id:'scheduled-1',chatId:CHAT,...scheduled}})}return route.fulfill({json:scheduled?[{id:'scheduled-1',chatId:CHAT,...scheduled}]:[]})});
+  await page.getByPlaceholder('Введите текст').fill('Позже');
+  await page.getByRole('button',{name:'Отправить',exact:true}).click({button:'right'});
+  const dialog=page.locator('.scheduled-panel');
+  await expect(dialog.getByRole('button',{name:'Запланировать',exact:true})).toBeDisabled();
+  await dialog.getByRole('button',{name:'Выбрать дату и время',exact:true}).click();
+  await page.getByLabel('Дата',{exact:true}).fill('2099-01-02');
+  await page.getByRole('button',{name:'Далее',exact:true}).click();
+  await expect(page.getByLabel('Дата',{exact:true})).toBeHidden();
+  await page.getByLabel('Время',{exact:true}).fill('12:34');
+  await page.getByRole('button',{name:'ОК',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'Запланировать',exact:true})).toBeEnabled();
+  await page.screenshot({path:testInfo.outputPath('schedule-'+theme+'.png')});
+  await dialog.getByRole('button',{name:'Запланировать',exact:true}).click();
+  await expect.poll(()=>scheduled?.content).toBe('Позже');
+  await expect(page.getByPlaceholder('Введите текст')).toHaveValue('');
+  await expect(page.locator('#scheduled-count')).toBeVisible();
+});
+
+test('опрос повторяет ограничения Android и позволяет убрать срок',async({page})=>{
+  await messenger(page);await openGroup(page);await page.getByRole('button',{name:'Создать опрос'}).click();
+  const dialog=page.locator('.poll-composer');await expect(dialog.getByRole('button',{name:'Отправить',exact:true})).toBeDisabled();
+  await dialog.getByPlaceholder('Вопрос',{exact:true}).fill('Куда идём?');await dialog.getByPlaceholder('Вариант 1',{exact:true}).fill('Домой');await dialog.getByPlaceholder('Вариант 2',{exact:true}).fill('Гулять');
+  for(let i=0;i<8;i++)await dialog.getByRole('button',{name:'+ Вариант ответа',exact:true}).click();
+  await expect(dialog.getByRole('button',{name:'+ Вариант ответа',exact:true})).toBeHidden();
+  await expect(dialog.getByRole('button',{name:'Отправить',exact:true})).toBeEnabled();
+});
+
+test('избранное сохраняет копирование, а редактирование использует окно Olo',async({page})=>{
+  await messenger(page);await openGroup(page);
+  await page.evaluate(()=>{S.selfChatId=S.chatId;showMessageActions({id:'own-message',chatId:S.chatId,senderId:S.userId,content:'Текст',timestamp:new Date().toISOString()})});
+  await expect(page.getByRole('button',{name:'Копировать сообщение',exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:'В избранное',exact:true})).toHaveCount(0);
+  await page.getByRole('button',{name:'Изменить',exact:true}).click();
+  await expect(page.getByLabel('Сообщение',{exact:true})).toHaveValue('Текст');
+  await page.getByLabel('Сообщение',{exact:true}).fill('');
+  await expect(page.getByRole('button',{name:'Сохранить',exact:true})).toBeDisabled();
+});
+
+test('настройки содержат главу памяти и подтверждение очистки',async({page})=>{
+  await messenger(page);await page.getByRole('button',{name:'Настройки',exact:true}).click();
+  await expect(page.getByText('ДАННЫЕ И ПАМЯТЬ',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Очистить кэш',exact:true}).click();
+  await expect(page.getByText('Очистить кэш?',{exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Отмена',exact:true}).click();
+  await expect(page.getByText('Очистить кэш?',{exact:true})).toHaveCount(0);
+});
+
 test('пустые вложения скрыты, настройки прокручиваются целиком', async ({ page }) => {
   await messenger(page); await openGroup(page);
   await expect(page.locator('.attachment-pending')).toBeHidden();
@@ -121,6 +187,7 @@ test('аватары группы и участников переживают �
   const result = page.locator('.group-user-option').filter({ hasText: 'Клара' });
   await expect(result.locator('img')).toBeVisible();
   await result.click();
+  await page.getByRole('button', { name: 'Добавить (1)', exact: true }).click();
   await expect(page.locator('.group-member-list .group-member-row')).toHaveCount(3);
   expect(state.refreshCalls()).toBe(1);
 });

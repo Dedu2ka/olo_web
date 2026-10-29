@@ -14,6 +14,32 @@ html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 .avatar-overlay { z-index: 1500; }
 .olo-picker-overlay, .group-member-picker-overlay { z-index: 1300; }
 .scheduled-row { text-align: left; }
+.message-actions:has(> .android-dialog) { align-items: center; justify-content: center; padding: 24px; }
+.android-dialog { width: min(100%, 432px); max-height: calc(100dvh - 48px); overflow: auto; padding: 24px; display: flex; flex-direction: column; gap: 16px; background: var(--card); border: 1px solid var(--line); color: var(--text); }
+.android-dialog > b { font-size: 24px; font-weight: 500; }
+.android-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.android-dialog-actions button, .dialog-text-button { background: transparent; color: var(--accent); box-shadow: none; padding: 10px 12px; }
+.android-dialog-actions button:disabled { color: var(--mut); opacity: .55; cursor: default; }
+.android-dialog button.dialog-text-button { background: transparent; color: var(--accent); border: 0; text-align: left; }
+.settings-storage { display: flex; flex-direction: column; gap: 10px; }
+.settings-storage label, .settings-storage small { color: var(--mut); }
+.settings-storage .dialog-text-button { align-self: flex-start; }
+.schedule-preview { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.user-selection { width: 100%; min-height: 0; }
+.group-member-picker > .user-selection { flex: 1; overflow: auto; }
+.group-user-results { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.group-user-option { width: 100%; text-align: left; }
+.poll-composer > .android-dialog-actions { flex-direction: row; }
+.message-menu > button { min-height: 52px; padding: 10px 0; background: transparent; color: var(--accent); }
+.reaction-picker .reaction-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; }
+.reaction-picker .reaction-grid button { width: 100%; background: transparent; border: 0; font-size: 25px; }
+.reaction-picker > button:last-child { align-self: flex-end; width: auto; background: transparent; border: 0; color: var(--accent); }
+.record-overlay.front-flash { background: white; }
+.record-overlay.front-flash .record-panel { background: transparent; color: #241a30; }
+.record-flash[aria-pressed=true] { color: var(--accent); }
+.android-dialog, .profile-card { animation: olo-dialog-enter 160ms ease-out; }
+@keyframes olo-dialog-enter { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .android-dialog, .profile-card { animation: none; } }
 :root {
   color-scheme: dark;
   --bg: #1d1b23;

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'olo-shell-v12';
+const CACHE_NAME = 'olo-shell-v13';
 const SHELL = ['./', './index.html', './after-hours.css', './push.js', './emoji-catalog.json', './manifest.webmanifest', './favicon-32.png', './icon-180.png', './icon-192.png', './icon-512.png', './icon-maskable-192.png', './icon-maskable-512.png'];
 
 self.addEventListener('install', event => {
